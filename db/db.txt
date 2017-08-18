@@ -1,0 +1,175 @@
+/*
+设备类型
+*/
+create table udevkind 
+(
+	fdevkindno	varchar(20),  --编码
+	fdevkindname varchar(20),  --名称
+	primary key (fdevkindno)
+);
+
+create table udevkind (	fdevkindno varchar(20),	fdevkindname varchar(20),	primary key(fdevkindno));
+insert into udevkind (fdevkindno, fdevkindname) values ('01', '温湿度HT');
+insert into udevkind (fdevkindno, fdevkindname) values ('02', '太阳能SE');
+insert into udevkind (fdevkindno, fdevkindname) values ('03', '门铃DB');
+insert into udevkind (fdevkindno, fdevkindname) values ('04', '开关SW');
+insert into udevkind (fdevkindno, fdevkindname) values ('05', '门磁开关Door Contact(DC)');
+insert into udevkind (fdevkindno, fdevkindname) values ('06', '二氧化碳浓度CO2');
+insert into udevkind (fdevkindno, fdevkindname) values ('07', '红外PIR');
+insert into udevkind (fdevkindno, fdevkindname) values ('08', '光感UV');
+insert into udevkind (fdevkindno, fdevkindname) values ('09', '烟雾SMOKE');
+insert into udevkind (fdevkindno, fdevkindname) values ('0A', '光电报警ALARM');
+insert into udevkind (fdevkindno, fdevkindname) values ('0B', '空气质量TVOC');
+insert into udevkind (fdevkindno, fdevkindname) values ('0C', '手势识别3DKEY');
+insert into udevkind (fdevkindno, fdevkindname) values ('0D', '重力传感器G-Sensor');
+insert into udevkind (fdevkindno, fdevkindname) values ('0E', '震动传感器SHOCK');
+insert into udevkind (fdevkindno, fdevkindname) values ('0F', '停车检测PARKING');
+insert into udevkind (fdevkindno, fdevkindname) values ('10', '气压传感器UP');
+insert into udevkind (fdevkindno, fdevkindname) values ('11', '激光粉尘PM');
+insert into udevkind (fdevkindno, fdevkindname) values ('12', '甲醛CH2O');
+
+
+
+
+/*设备信息*/
+/* 不用 UNIQUE
+create table udevinfo 
+(
+    id   INTEGER PRIMARY KEY, --主键，每次insert时让它自动加1
+    fnetno	varchar(20),		--网络地址
+	fportno	varchar(20),		--网络端点
+	fdevkindno	varchar(20),    --类型编码
+    fdevno	varchar(20),		--设备号			
+	//UNIQUE (fnetno,fportno)     --让它们唯一
+);
+
+*/
+create table udevinfo  --设备信息
+(
+    id   INTEGER PRIMARY KEY, --主键，每次insert时让它自动加1
+    fnetno	varchar(20),		--网络地址
+	fnetmac varchar(20),		--网络Mac地址	
+	fportno	varchar(20),		--网络端点
+	fdevkindno	varchar(20),    --类型编码
+    fdevno	varchar(20)		--设备号			
+);
+
+create table udevinfo (id   INTEGER PRIMARY KEY,fnetno varchar(20),fnetmac varchar(20),fportno varchar(20),fdevkindno varchar(20),fdevno varchar(20));
+
+
+
+ 
+
+//测试数据
+insert into udevinfo (fnetno, fportno) values ('6dc3','0b');
+insert into udevinfo (fnetno, fportno) values ('6dc3','0d');
+insert into udevinfo (fnetno) values ('40f3');
+
+
+//气压数据  air pressure
+create table uairpressure	--气压数据
+(
+    id   INTEGER PRIMARY KEY, --主键，每次insert时让它自动加1
+	fnetno	varchar(20),	--短地址
+	fdevno	varchar(20),	--设备号
+	ftemperature	varchar(20), --温度值
+	fairpressure	varchar(20),  --气压值
+	ftimestamp TimeStamp NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+
+create table uairpressure(id INTEGER PRIMARY KEY,fnetno varchar(20), fdevno varchar(20),ftemperature varchar(20),fairpressure varchar(20), ftimestamp TimeStamp NOT NULL DEFAULT (datetime('now','localtime')));
+ 
+//只取一遍,不会
+create table usysinfo	--系统信息
+(
+	fpanID	varchar(20),
+	fexpan	varchar(20),
+	fchannel	varchar(20),
+	fversion	varchar(20)
+);
+insert into usysinfo (fpanID,fexpan,fchannel,fversion) values ('0000','0000','0000','0000');
+
+create table uaddrlst	--网络地址列表信息
+(
+	faddr	varchar(20),
+	fmac		varchar(20),				--mac码 8字节16位长,	
+	primary key (faddr)	
+);
+alter table uaddrlst add column fmac varchar(20); 
+
+//linux 下适用
+create table uaddrlst	(	faddr varchar(20),fmac varchar(20),	primary key (faddr)	);
+
+create table udevlst  --设备信息
+(
+    faddr	varchar(20) NOT NULL,		--网络地址
+    fpoint	varchar(20) NOT NULL,		--网络端点
+    fdevkindno	varchar(20),    --类型编码
+	fmac		varchar(20),				--mac码 8字节16位长,
+    primary key (faddr, fpoint)
+);
+	
+alter table udevlst add column fmac varchar(20); 
+
+
+//linux 下适用
+create table udevlst  ( faddr varchar(20) NOT NULL,fpoint varchar(20) NOT NULL, fdevkindno varchar(20), fmac varchar(20),primary key (faddr, fpoint) );
+
+create table uscene  --场景信息
+(
+    fsceneno	INTEGER PRIMARY KEY,		--场景序号
+    fscenename	varchar(20) NOT NULL,		--场景名称
+	fgroupno	INTEGER NOT NULL,			--组号
+	fdelayTime   int,	--0--60秒
+);
+create table uscene (fsceneno INTEGER PRIMARY KEY,fscenename varchar(20) NOT NULL,fgroupno INTEGER NOT NULL,fdelayTime int);
+
+insert into uscene (fscenename) select 'dfd' where NOT EXISTS (select 1 from uscene where fscenename='dfd');
+
+create table uscenedtl  --场景明细
+(
+    fsceneno   INTEGER, --主键，
+    fscenename	varchar(32) NOT NULL,		--场景名称
+    fshtaddr	varchar(10) NOT NULL,		--短地址 shortaddress
+	fpoint 		varchar(10) NOT NULL,		--端点 point
+	fgroupno 	int NOT NULL,		
+    UNIQUE (fsceneno, fshtaddr, fpoint,fgroupno)
+);
+//linux 适用
+//create table uscenedtl(fsceneno INTEGER,fscenename varchar(32) NOT NULL,fshtaddr varchar(10) NOT NULL,fpoint varchar(10) NOT NULL, fprofid varchar(10), frecentValue varchar(20), firid varchar(10), fdelayTime int,UNIQUE (fsceneno, fshtaddr, fpoint));
+create table uscenedtl(fsceneno INTEGER,fscenename varchar(32) NOT NULL,fshtaddr varchar(10) NOT NULL,fpoint varchar(10) NOT NULL, fgroupno int NOT NULL,UNIQUE (fsceneno, fshtaddr, fpoint,fgroupno));
+
+
+create table ugroup  --组信息
+(
+    fgroupno	INTEGER PRIMARY KEY,		--组序号
+    fgroupname	varchar(20) NOT NULL		--组名称
+);
+//linux
+create table ugroup ( fgroupno INTEGER PRIMARY KEY, fgroupname varchar(20) NOT NULL );
+
+create table ugroupdtl  --组明细
+(
+    fgroupno   INTEGER, --主键，
+    fgroupname	varchar(32) NOT NULL,		--场景名称
+    fshtaddr	varchar(10) NOT NULL,		--短地址 shortaddress
+	fpoint 		varchar(10) NOT NULL,		--端点 point
+    primary key (fgroupno, fshtaddr, fpoint)
+);
+//linux 
+create table ugroupdtl (fgroupno INTEGER,fgroupname varchar(32) NOT NULL, fshtaddr varchar(10) NOT NULL,fpoint varchar(10) NOT NULL, primary key (fgroupno, fshtaddr, fpoint));
+
+
+create table utask  --任务信息
+(
+    ftaskno	INTEGER PRIMARY KEY,		--任务序号
+    ftaskname	varchar(20) NOT NULL,		--任务名称
+	ftasktrigkind	INTEGER NOT NULL,			--任务触发类型 timer 0x01, sensor 0x02
+	fvalue   varchar(20),		--任务值 Sensor 0x02	shortAddress	endPoint	deviceID	Condition1	Value1	Condition2	Value2	
+	fsceneno INTEGER,	--场景号
+	fenable   int,	          --enable: 0x01 enable scene, 0x00, stop scene 或time 
+	falarm 	  int,      --
+);
+
+create table utask(ftaskno INTEGER PRIMARY KEY, ftaskname varchar(20) NOT NULL, ftasktrigkind INTEGER NOT NULL,fvalue varchar(20),fsceneno INTEGER, fenable int, falarm int);
