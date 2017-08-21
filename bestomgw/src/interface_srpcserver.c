@@ -1762,7 +1762,11 @@ void SRPC_RxCB(int clientFd)
 	{
 		printf("SRPC_RxCB: Socket error\n");
 	}
-
+	printf("----The byteToRead is %d----", byteToRead);
+	if (byteToRead == 0) {
+		deleteSocketRec(clientFd);
+		printf("Disconnected:  %d\r\n",clientFd);
+	}
 	while (byteToRead)
 	{
 
@@ -1771,44 +1775,11 @@ void SRPC_RxCB(int clientFd)
 
 
 #if 1	 
-	unsigned char buffer[2048*2] = {0};//
 	unsigned char read_buf[2048], data[1024];
-	int i, head = 0, tail = 0; //
-	int nready, nread, dlen;
 
 		byteRead = 0;
 		byteRead += read(clientFd, read_buf, sizeof(read_buf));
 		SRPC_ProcessIncoming(read_buf,byteRead, clientFd);
-		// if(byteRead > 0 && byteRead < (sizeof(read_buf) - tail))
-		// {
-		    // memcpy(&buffer[tail], read_buf, byteRead);
-		    // tail += byteRead;
-		
-		    // i = 0;
-		    // while(i < tail && buffer[i] != 0x3A) i++;
-				
-		    // while(buffer[i] == 0x3A && buffer[i+1] <= tail-i)
-		    // {
-				// memset(data, 0, sizeof(data));
-				// dlen = buffer[i+1]*256+buffer[i+2];
-				// memcpy(data, &buffer[i], dlen);
-				
-				// SRPC_ProcessIncoming(&data[3], dlen - 3, clientFd);
-
-				
-				// head = i + dlen;
-				// tail -= head;
-				// if(tail > 0)
-				// {
-					// memmove(buffer, &buffer[head], tail);
-				// }
-
-				
-				// i = 0;
-				// while(i < tail && buffer[i] != 0x3A) i++;
-		    // }
-		
-		// }
 		byteToRead -= byteRead;
 #endif						
 	}

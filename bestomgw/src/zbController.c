@@ -215,8 +215,8 @@ int main(int argc, char* argv[])
 					}
 				}
 
-				// free(client_fds);
-				// free(pollFds);
+				free(client_fds);
+				free(pollFds);
 			}
 		}
 	}

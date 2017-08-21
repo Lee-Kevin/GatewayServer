@@ -80,7 +80,8 @@ socketServerCb_t socketServerConnectCb;
 /*********************************************************************
  * LOCAL FUNCTION PROTOTYPES
  */
-static void deleteSocketRec(int rmSocketFd);
+//static void deleteSocketRec(int rmSocketFd);
+
 static int createSocketRec(void);
 
 /*********************************************************************
@@ -94,7 +95,7 @@ static int createSocketRec(void);
  *
  * @param   table
  * @param   rmTimer
- *
+ * 创建一个socket接收函数
  * @return  new clint fd
  */
 int createSocketRec(void)
@@ -344,9 +345,10 @@ void socketSeverPoll(int clinetFd, int revent)
 	{
 		int newClientFd = createSocketRec();
 		
-		printf("----------Going to call back socketServerConnectCb-------------\r\n");
+		
 		if (socketServerConnectCb)
 		{
+			printf("-There is a TCP Client want to connect-\r\n");
 			socketServerConnectCb(newClientFd);
 		}
 	}
@@ -359,23 +361,26 @@ void socketSeverPoll(int clinetFd, int revent)
 			//its a Rx event
 			//printf("got Rx on fd %d, pakcetCnt=%d\n", clinetFd, pakcetCnt++);
 			
-			printf("Deal with the data from Client\r\n");
+			printf("There is data come in \r\n"); // 无论是断开还是连接，都会进入该函数进行执行
 			if (socketServerRxCb)
 			{
 				socketServerRxCb(clinetFd);
 			}
 
 		}
+
 		if (revent & POLLRDHUP)
 		{
 			//its a shut down close the socket
-			//printf("Client fd:%d disconnected\n", clinetFd);
+			printf("Client fd:%d disconnected\n", clinetFd);
 
 			//remove the record and close the socket
 			
-			/* 暂不需要删除 */
+			// /* 暂不需要删除 */
+			//
 			// deleteSocketRec(clinetFd);
 		}
+		
 	}
 
 	//write(clientSockFd,"I got your message",18);
