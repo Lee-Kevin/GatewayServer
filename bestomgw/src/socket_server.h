@@ -62,6 +62,13 @@ typedef void (*socketServerCb_t)(int clientFd);
 #define POLLRDHUP 1
 
 /*
+	删除连接的socket
+*/
+
+void deleteSocketRec(int rmSocketFd);
+
+
+/*
  * serverSocketInit - initialises the server.
  */
 int32 socketSeverInit(uint32 port);

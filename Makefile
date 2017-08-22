@@ -2,7 +2,7 @@
 # nfc daemon Makefile 
 #############################################################
 EXEC = bestomgwd
-CFLAGS += -O2 -Wall -Ibestomgw/inc
+CFLAGS += -O2 -Wall 
 
 ##OBJS = bestomgw/src/utils.o bestomgw/src/sqlite3.o bestomgw/src/timertask.o bestomgw/src/gateway.o 
 
