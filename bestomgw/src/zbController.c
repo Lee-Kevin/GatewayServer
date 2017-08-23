@@ -35,7 +35,7 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
-
+#define _GNU_SOURCE
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -50,7 +50,7 @@
 
 
 #define MAX_DB_FILENAMR_LEN 255
-#define POLLRDHUP 1
+//#define POLLRDHUP 0x2000
 
 //全局变量	
 //int fdserwrite, fdread; //串口 写,读
@@ -188,7 +188,8 @@ int main(int argc, char* argv[])
 				{
 					pollFds[pollFdIdx + 1].fd = client_fds[pollFdIdx];
 					pollFds[pollFdIdx + 1].events = POLLIN | POLLRDHUP;  // 保留
-					//printf("zllMain: adding fd %d to poll()\n", pollFds[pollFdIdx].fd);
+	
+					printf("The event number ID is : %d\r\n",pollFds[pollFdIdx+1].events);
 				}
 
 				printf("zllMain: waiting for poll()\n");
@@ -209,7 +210,7 @@ int main(int argc, char* argv[])
 				for (pollFdIdx = 1; pollFdIdx < (numClientFds + 1); pollFdIdx++)
 				{
 					if ((pollFds[pollFdIdx].revents))
-					{
+					{       printf("The revent number ID is : %d\r\n",pollFds[pollFdIdx].revents);
 						printf("Message from Socket Sever\n");
 						socketSeverPoll(pollFds[pollFdIdx].fd, pollFds[pollFdIdx].revents);
 					}

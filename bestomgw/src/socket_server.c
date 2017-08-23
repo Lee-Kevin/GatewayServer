@@ -39,6 +39,7 @@
 /*********************************************************************
  * INCLUDES
  */
+#define _GNU_SOURCE 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -141,6 +142,7 @@ int createSocketRec(void)
 /*********************************************************************
  * @fn      deleteSocketRec
  *
+ * @brief   Delete a rec from list.
  * @brief   Delete a rec from list.
  *
  * @param   table
@@ -372,13 +374,13 @@ void socketSeverPoll(int clinetFd, int revent)
 		if (revent & POLLRDHUP)
 		{
 			//its a shut down close the socket
-			printf("Client fd:%d disconnected\n", clinetFd);
+			printf("This is POLLRDHUP Client fd:%d disconnected\n", clinetFd);
 
 			//remove the record and close the socket
 			
 			// /* 暂不需要删除 */
 			//
-			// deleteSocketRec(clinetFd);
+			deleteSocketRec(clinetFd);
 		}
 		
 	}

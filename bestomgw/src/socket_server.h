@@ -59,19 +59,14 @@ typedef void (*socketServerCb_t)(int clientFd);
 //#define SOCKET_SERVER_PORT 1234
 #define MAX_CLIENTS 50
 
-#define POLLRDHUP 1
-
-/*
-	删除连接的socket
-*/
-
-void deleteSocketRec(int rmSocketFd);
-
+//#define POLLRDHUP 1
 
 /*
  * serverSocketInit - initialises the server.
  */
 int32 socketSeverInit(uint32 port);
+
+void deleteSocketRec(int rmSocketFd);
 
 /*
  * serverSocketConfig - initialises the server.

@@ -395,7 +395,7 @@ void SRPC_ProcessIncoming(uint8_t *pBuf, unsigned int nlen, uint32_t clientFd)
 		gw_debug("cjsonbuf: ", cjsonbuf, nlen  );
 		printf("%s,%d;cjsonbuf=%s \n",__FUNCTION__,__LINE__,cjsonbuf);
 		#endif 
-
+	memset(&pBuf[0],0,nlen);
 	printf("---------------------Exit SRPC Process function------------------\r\n");	
 	
 	cJSON * pJson = cJSON_Parse(cjsonbuf);
@@ -407,6 +407,7 @@ void SRPC_ProcessIncoming(uint8_t *pBuf, unsigned int nlen, uint32_t clientFd)
        // parse faild, return
       return ;
     }
+	
 	
  // get string from json
  /* 使用JSON做解析处理工作 暂时保留*/
@@ -423,33 +424,7 @@ void SRPC_ProcessIncoming(uint8_t *pBuf, unsigned int nlen, uint32_t clientFd)
     // cJSON_Delete(pJson);
 	//cjsonbuf[4096]=NULL;
 
-#if 0		
-		printf("%s,%d;ncmd=%d\n",__FUNCTION__,__LINE__,sizeof(cmdProcessIncoming));		
-	int ifunc=-1;	
-    for(i=0;i< sizeof(cmdProcessIncoming);i++)
-	{	
-	   if (0== strcmp(cmdProcessIncoming[i], scmd))
-	     ifunc = i;
-	}
-	 printf("ifunc : %d \n", ifunc);
 
-	//func = rpcsProcessIncoming[(pBuf[SRPC_FUNC_ID] & ~(0x80))];
-	if (ifunc>=0)
-	{
-	  func = rpcsProcessIncoming[ifunc];
-	
-	  if (func)
-	  {
-	  	(*func)(pBuf, clientFd);
-	  }
-	  else
-	  {
-		//printf("Error: no processing function for CMD 0x%x\n", pBuf[SRPC_FUNC_ID]);
-	  }
-	  
-	}
-#endif 
-	//printf("SRPC_ProcessIncoming--\n");
 }
 
 
@@ -1763,10 +1738,10 @@ void SRPC_RxCB(int clientFd)
 		printf("SRPC_RxCB: Socket error\n");
 	}
 	printf("----The byteToRead is %d----", byteToRead);
-	if (byteToRead == 0) {
-		deleteSocketRec(clientFd);
-		printf("Disconnected:  %d\r\n",clientFd);
-	}
+	// if (byteToRead == 0) {
+		// deleteSocketRec(clientFd);
+		// printf("Disconnected:  %d\r\n",clientFd);
+	// }
 	while (byteToRead)
 	{
 
