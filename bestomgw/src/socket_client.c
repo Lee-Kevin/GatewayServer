@@ -66,6 +66,8 @@
 
 #include "socket_client.h"
 
+#define __BIG_DEBUG__
+
 #ifdef __BIG_DEBUG__
 #define debug_printf(fmt, ...) printf( fmt, ##__VA_ARGS__)
 #else
@@ -73,6 +75,7 @@
 #endif
 
 #define msg_memcpy(src, dst, len)	memcpy(src, dst, len)
+
 
 /**************************************************************************************************
  *                                        Externals
@@ -108,10 +111,12 @@ typedef struct LinkedMsg linkedMsg;
 // Client socket handle
 int sClientFd;
 // Client data transmission buffers
-char socketBuf[2][TX_BUF_SIZE];
+// char socketBuf[2][TX_BUF_SIZE];
+char socketBuf[2][MY_AP_MAX_BUF_LEN];
 // Client data received buffer
 linkedMsg *rxBuf;
 // Client data processing buffer
+/* 存放客户端等待处理的数据 */
 linkedMsg *rxProcBuf;
 
 // Message count to keep track of incoming and processed messages
@@ -121,7 +126,7 @@ static pthread_t RTISThreadId;
 static void *rxThreadFunc (void *ptr);
 static void *handleThreadFunc (void *ptr);
 
-// Mutex to handle rx
+// Mutex to handle rx 互斥锁， pthread_mutex_t 是一个结构体，PTHREAD_MUTEX_INITIALIZER   结构常量
 pthread_mutex_t clientRxMutex = PTHREAD_MUTEX_INITIALIZER;
 
 // conditional variable to notify that the AREQ is handled
@@ -165,6 +170,11 @@ int socketClientInit(const char *devPath, socketClientCb_t cb)
 	const char *ipAddress = "", *port = "";
 	char *pStr, strTmp[128];
 	
+	/*
+	* 1. 接收注册的回调函数，然后在信息处理线程里面进行处理 
+	* 2. 在handleThreadFunc函数中调用
+	* 3. 该函数的参数为 接收到的，需要处理的信息
+	*/
 	socketClientRxCb = cb;
 	
 	strncpy(strTmp, devPath, 128);
@@ -193,6 +203,7 @@ int socketClientInit(const char *devPath, socketClientCb_t cb)
 
 	/**********************************************************************
 	 * Initiate synchronization resources
+	 * 初始化需要同步的资源，互斥锁，条件变量等
 	 */
 	initSyncRes();
 
@@ -215,8 +226,6 @@ int socketClientInit(const char *devPath, socketClientCb_t cb)
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-//    ipAddress = "192.168.128.133";
-//    if ((res = getaddrinfo(NULL, ipAddress, &hints, &resAddr)) != 0)
 	if (port == NULL)
 	{
 		// Fall back to default if port was not found in the configuration file
@@ -313,6 +322,8 @@ int socketClientInit(const char *devPath, socketClientCb_t cb)
 	 * Create thread which can read new messages from the NPI server
 	 **********************************************************************/
 
+	//printf("\n---------------Going to Create Thread rxThreadFunc------------------------\n");
+
 	if (pthread_create(&RTISThreadId, NULL, rxThreadFunc, NULL))
 	{
 		// thread creation failed
@@ -324,6 +335,8 @@ int socketClientInit(const char *devPath, socketClientCb_t cb)
 	 * Create thread which can handle new messages from the NPI server
 	 **********************************************************************/
 
+	//printf("\n---------------Going to Create Thread handleThreadFunc----------------------\n");
+	
 	if (pthread_create(&RTISThreadId, NULL, handleThreadFunc, NULL))
 	{
 		// thread creation failed
@@ -339,22 +352,28 @@ static void *handleThreadFunc (void *ptr)
 	int done = 0, tryLockFirstTimeOnly = 0;
 	
 	// Handle message from socket
+	printf("\n #############I am in the handleThreadFunc ##############\n");
 	do {
+		
+		/*
+		* 1. 在该函数进行尝试上锁的操作，如果不能上锁，将对资源进行等待。
+		* 2. 执行pthread_cond_wait(&clientRxCond, &clientRxMutex); 将进行解锁操作。
+		* 3. 为了防止其他线程正在上锁的资源被异常解锁，将会进行尝试上锁操作
+		* 4. 只存在线程第一次运行时，其他时刻，可以先解锁互斥锁，然后释放信号量
+		*/
 
-    if (tryLockFirstTimeOnly == 0)
-		{
+		if (tryLockFirstTimeOnly == 0) {
 			// Lock mutex
 			debug_printf("[MUTEX] Lock AREQ Mutex (Handle)\n");
 			pthread_mutex_lock(&clientRxMutex);
 
 			debug_printf("\n[MUTEX] AREQ Lock (Handle)\n");
-			tryLockFirstTimeOnly = 1;
+			tryLockFirstTimeOnly = 1;  
 		}
 		
 		// Conditional wait for the response handled in the Rx handling thread,
 		debug_printf("[MUTEX] Wait for Rx Cond (Handle) signal...\n");
 		pthread_cond_wait(&clientRxCond, &clientRxMutex);
-
 		debug_printf("[MUTEX] (Handle) has lock\n");
 
 		// Walk through all received AREQ messages before releasing MUTEX
@@ -365,8 +384,8 @@ static void *handleThreadFunc (void *ptr)
 					(unsigned int)searchList,
 					(unsigned int)(searchList->nextMessage));
 
-      if( socketClientRxCb != NULL)
-      {
+		  if( socketClientRxCb != NULL)
+		  {
 			  debug_printf("[MUTEX] Calling socketClientRxCb (Handle)...\n");
 			  socketClientRxCb((msgData_t *)&(searchList->message));
 			}
@@ -412,98 +431,98 @@ static void *rxThreadFunc (void *ptr)
 
 	struct pollfd ufds[1];
 	int pollRet;
+	int tmplen;
 	ufds[0].fd = sClientFd;
 	ufds[0].events = POLLIN | POLLPRI;
-
+	printf("\n-----I am in the rxThreadFunc-----\n");
 	// Read from socket
 	do {
+		/*
+		* poll(pollfd *ufds，unsigned int nfds, int timeout)
+		* The unit of timeout is ms.
+		*/
 		pollRet = poll((struct pollfd*)&ufds, 1, 1);
-		if (pollRet == -1)
-		{
+		// printf("\n-----The pollRet is :%d-----\n",pollRet);
+		if (pollRet == -1) {
 			// Error occured in poll()
 			perror("poll");
-		}
-		else if (pollRet == 0)
-		{
+		} else if (pollRet == 0) {
 			// Timeout, could still be AREQ to process
-		}
-		else
-		{		  
+		} else {
+			/*
+			* 普通或者优先带数据可读，
+			*/
 			if (ufds[0].revents & POLLIN) {
 				n = recv(sClientFd,
 						socketBuf[0],
-						SRPC_FRAME_HDR_SZ,
-						0); // normal data
-			}
+						MY_AP_MAX_BUF_LEN,
+						0); // normal data 
+						
+			} // 每次读SRPC_FRAME_HDR_SZ --（2）---个字节到缓冲区
+			/*
+			* 高优先级数据可读
+			*/
 			if (ufds[0].revents & POLLPRI) {
+				/*
+				* int recv( SOCKET s,     char FAR *buf,      int len,     int flags     );   
+				* -------------------------------------------------------------------------
+				* 1.指定接收端socket描述符
+				* 2.用来存放接受数据的缓冲区
+				* 3.标明缓冲区大小
+				* 4. 一般置0
+				* recv 函数返回的是缓冲区中的数据个数
+				*/
 				n = recv(sClientFd,
 						socketBuf[0],
-						SRPC_FRAME_HDR_SZ,
+						MY_AP_MAX_BUF_LEN,
 						MSG_OOB); // out-of-band data
 			}
-			if (n <= 0)
+			// printf("\n**************************************************\n");
+			// printf("The data that client recived is:\n %s",socketBuf[0]);
+			// printf("\n**************************************************\n");
+			
+			tmplen = strlen(socketBuf[0]);
+			
+			// tmplen = 0;
+			// while(socketBuf[0][tmplen] !='\0') {
+				// tmplen++;
+			// }
+			printf("\nThe data len n is : %d, tmplen is : %d\n",n,tmplen);
+			if (n <= 0)  /* 接收函数出错 */
 			{
 				if (n < 0)
 					perror("recv");
-				done = 1;
-			}
-			else if (n == SRPC_FRAME_HDR_SZ)
-			{
-				// We have received the header, now read out length byte and process it
-				n = recv(sClientFd,
-						(uint8_t*)&(socketBuf[0][SRPC_FRAME_HDR_SZ]),
-						((msgData_t *)&(socketBuf[0][0]))->len,
-						0);
-				if (n == ((msgData_t *)&(socketBuf[0][0]))->len)
-				{
-					int i;
-					debug_printf("Received %d bytes,\t cmdId 0x%.2X, pData:\t",
-							((msgData_t *)&(socketBuf[0][0]))->len,
-							((msgData_t *)&(socketBuf[0][0]))->cmdId);
-					for (i = SRPC_FRAME_HDR_SZ; i < (n + SRPC_FRAME_HDR_SZ); i++)
-					{
-						debug_printf(" 0x%.2X", (uint8_t)socketBuf[0][i]);
-					}
-					debug_printf("\n");
-
-  				// Allocate memory for new message
-					linkedMsg *newMessage = (linkedMsg *) malloc(sizeof(linkedMsg));
-					
-					//debug_printf("Freeing new message (@ 0x%.16X)...\n", (unsigned int)newMessage);
-					//free(newMessage);
-					
-					if (newMessage == NULL)
-					{
+				done = 1; // 退出循环
+			} else if (tmplen > 0) {
+				printf("\nThe data recive successfully\n");
+				
+				linkedMsg *newMessage = (linkedMsg *) malloc(sizeof(linkedMsg));
+				
+				if (newMessage == NULL) {
 						// Serious error, must abort
-						done = 1;
-						printf("[ERR] Could not allocate memory for AREQ message\n");
-						break;
-					}
-					else
-					{
-						messageCount++;
-						memset(newMessage, 0, sizeof(linkedMsg));
-						debug_printf("\n[DBG] Allocated \t@ 0x%.16X (received\040 %d messages), size:%x...\n",
-								(unsigned int)newMessage,
-								messageCount,
-								sizeof(linkedMsg));
-					}
-					
-					debug_printf("Filling new message (@ 0x%.16X)...\n", (unsigned int)newMessage);
-
-					// Copy AREQ message into AREQ buffer
+					done = 1;
+					printf("[ERR] Could not allocate memory for AREQ message\n");
+					break;
+				} else {
+					messageCount++;
+					memset(newMessage, 0, sizeof(linkedMsg));
+					// debug_printf("\n[DBG] Allocated \t@ 0x%.16X (received\040 %d messages), size:%x...\n",
+							// (unsigned int)newMessage,
+							// messageCount,
+							// sizeof(linkedMsg));
+								
 					memcpy(&(newMessage->message),
 							(uint8_t*)&(socketBuf[0][0]),
-							(((msgData_t *)&(socketBuf[0][0]))->len + SRPC_FRAME_HDR_SZ));
-
+							tmplen);
+					memset(socketBuf[0], 0, sizeof(socketBuf[0]));
+					printf("\n> I have already copy the message: %s\n",newMessage->message.pData);
+					
 					// Place message in read list
-					if (rxBuf == NULL)
-					{
+					if (rxBuf == NULL) {
 						// First message in list
+						/* 第一次接收到的信息，放在链表的第一个位置 */
 						rxBuf = newMessage;				
-					}
-					else
-					{
+					} else { // 后面接收的信息，继续放在链表后方
 						linkedMsg *searchList = rxBuf;
 						// Find last entry and place it here
 						while (searchList->nextMessage != NULL)
@@ -513,50 +532,131 @@ static void *rxThreadFunc (void *ptr)
 						searchList->nextMessage = newMessage;
 					}
 				}
-				else
-				{
-					// Serious error
-					printf("ERR: Incoming Rx has incorrect length field; %d\n",
-							((msgData_t *)&(socketBuf[0][0]))->len);
+				
+			} else {
+				debug_printf("[MUTEX] Unlock Rx Mutex (Read)\n");
+				// Then unlock the thread so the handle can handle the AREQ
+				pthread_mutex_unlock(&clientRxMutex);
+			}
 
-					debug_printf("[MUTEX] Unlock Rx Mutex (Read)\n");
-					// Then unlock the thread so the handle can handle the AREQ
-					pthread_mutex_unlock(&clientRxMutex);
-				}
-		  }
-		  else
-		  {
-		  	// Impossible. ... ;)
-		  }
+			
+			// /********************************************************************************/
+			// else if (n == SRPC_FRAME_HDR_SZ) /* 如果前方帧头接收正确 */
+			// {
+				// // We have received the header, now read out length byte and process it
+				// n = recv(sClientFd,
+						// (uint8_t*)&(socketBuf[0][SRPC_FRAME_HDR_SZ]),
+						// ((msgData_t *)&(socketBuf[0][0]))->len,
+						// 0);
+				// if (n == ((msgData_t *)&(socketBuf[0][0]))->len) // 接收到正确的数据
+				// {
+					// int i;
+					// debug_printf("Received %d bytes,\t cmdId 0x%.2X, pData:\t",
+							// ((msgData_t *)&(socketBuf[0][0]))->len,
+							// ((msgData_t *)&(socketBuf[0][0]))->cmdId);
+					// for (i = SRPC_FRAME_HDR_SZ; i < (n + SRPC_FRAME_HDR_SZ); i++)
+					// {
+						// debug_printf(" 0x%.2X", (uint8_t)socketBuf[0][i]);
+					// }
+					// debug_printf("\n");
+
+  				// // Allocate memory for new message 结构体指针
+					// linkedMsg *newMessage = (linkedMsg *) malloc(sizeof(linkedMsg));
+					
+					// //debug_printf("Freeing new message (@ 0x%.16X)...\n", (unsigned int)newMessage);
+					// //free(newMessage);
+					
+					// if (newMessage == NULL)
+					// {
+						// // Serious error, must abort
+						// done = 1;
+						// printf("[ERR] Could not allocate memory for AREQ message\n");
+						// break;
+					// }
+					// else
+					// {
+						// messageCount++;
+						// memset(newMessage, 0, sizeof(linkedMsg));
+						// debug_printf("\n[DBG] Allocated \t@ 0x%.16X (received\040 %d messages), size:%x...\n",
+								// (unsigned int)newMessage,
+								// messageCount,
+								// sizeof(linkedMsg));
+					// }
+					
+					// debug_printf("Filling new message (@ 0x%.16X)...\n", (unsigned int)newMessage);
+
+					// // Copy AREQ message into AREQ buffer
+					// memcpy(&(newMessage->message),
+							// (uint8_t*)&(socketBuf[0][0]),
+							// (((msgData_t *)&(socketBuf[0][0]))->len + SRPC_FRAME_HDR_SZ));
+
+					// // Place message in read list
+					// if (rxBuf == NULL) {
+						// // First message in list
+						// /* 第一次接收到的信息，放在链表的第一个位置 */
+						// rxBuf = newMessage;				
+					// } else { // 后面接收的信息，继续放在链表后方
+						// linkedMsg *searchList = rxBuf;
+						// // Find last entry and place it here
+						// while (searchList->nextMessage != NULL)
+						// {
+							// searchList = searchList->nextMessage;
+						// }
+						// searchList->nextMessage = newMessage;
+					// }
+				// }
+				// else
+				// {
+					// // Serious error
+					// printf("ERR: Incoming Rx has incorrect length field; %d\n",
+							// ((msgData_t *)&(socketBuf[0][0]))->len);
+
+					// debug_printf("[MUTEX] Unlock Rx Mutex (Read)\n");
+					// // Then unlock the thread so the handle can handle the AREQ
+					// pthread_mutex_unlock(&clientRxMutex);
+				// }
+		  // }
+		  // else
+		  // {
+		  	// // Impossible. ... ;)
+		  // }
+		/***********************************************************************************/  
 		}
 
-		// Handle thread must make sure it has finished its list. See if there are new messages to move over
+		/*
+		* Handle thread must make sure it has finished its list. See if there are new messages to move over
+		* 清空rxBuf 并把接收的数据内容交由rxProcBuf，并向 handle thread 传递信号量 clientRxCond
+		*/
+		
 		if (rxBuf != NULL)
 		{
 		    pthread_mutex_lock(&clientRxMutex);
 		    
 				// Move list over for processing
-				rxProcBuf = rxBuf;			
+		    rxProcBuf = rxBuf;			
 				
 				// Clear receiving buffer for new messages
-				rxBuf = NULL;
+		    rxBuf = NULL;
 
-				debug_printf("[DBG] Copied message list (processed %d messages)...\n",
+			debug_printf("[DBG] Copied message list (processed %d messages)...\n",
 						messageCount);
 				
-				debug_printf("[MUTEX] Unlock Mutex (Read)\n");
+			debug_printf("[MUTEX] Unlock Mutex (Read)\n");
 				// Then unlock the thread so the handle can handle the AREQ
-				pthread_mutex_unlock(&clientRxMutex);
+			pthread_mutex_unlock(&clientRxMutex);
 				
-				debug_printf("[MUTEX] Signal message read (Read)...\n");
-				// Signal to the handle thread an AREQ message is ready
-				pthread_cond_signal(&clientRxCond);
-				debug_printf("[MUTEX] Signal message read (Read)... sent\n");
+			debug_printf("[MUTEX] Signal message read (Read)...\n");
+			/*
+			* 发送信号给另外一个正在处于阻塞等待状态的线程handle thread. 使其脱离阻塞状态，继续执行。
+			* Signal to the handle thread an AREQ message is ready
+			*/
+			pthread_cond_signal(&clientRxCond);  
+			printf("\n-----I have already send the signal clientRxCond ---\n");
+			debug_printf("[MUTEX] Signal message read (Read)... sent\n");
 		}
 
 	} while (!done);
-
-
+	printf("\n-----I am going to exit rxThreadFunc-----\n");
 	return ptr;
 }
 
@@ -564,9 +664,11 @@ static void *rxThreadFunc (void *ptr)
 static void initSyncRes(void)
 {
   // initialize all mutexes
+  // 动态方式 初始化互斥锁
   pthread_mutex_init(&clientRxMutex, NULL);
 
   // initialize all conditional variables
+  // 初始化条件变量
   pthread_cond_init(&clientRxCond, NULL);
 }
 
@@ -636,17 +738,34 @@ void socketClientClose(void)
 void socketClientSendData (msgData_t *pMsg)
 {
 	int i;
-	debug_printf("trying to send %d bytes,\t cmdId 0x%.2X, pData:",
-			pMsg->len,
-			pMsg->cmdId);
-	debug_printf("\t");
-	for (i = 0; i < pMsg->len; i++)
+	int datalen=0;
+	
+	// while(pMsg->pData[datalen] != '\0') {
+		// datalen++;
+	// }
+	datalen = strlen(pMsg->pData);
+	// debug_printf("trying to send %d bytes,\t cmdId 0x%.2X, pData:",
+			// pMsg->len,
+			// pMsg->cmdId);
+	// debug_printf("\t");
+	// for (i = 0; i < pMsg->len; i++)
+	// {
+		// debug_printf(" 0x%.2X", pMsg->pData[i]);
+	// }
+	// debug_printf("\n");
+
+	// if (send(sClientFd, ((uint8_t*)pMsg), pMsg->len + SRPC_FRAME_HDR_SZ , 0) == -1)
+	// {
+		// perror("send");
+		// exit(1);
+	// }	
+	for (i = 0; i < datalen; i++)
 	{
 		debug_printf(" 0x%.2X", pMsg->pData[i]);
 	}
 	debug_printf("\n");
 
-	if (send(sClientFd, ((uint8_t*)pMsg), pMsg->len + SRPC_FRAME_HDR_SZ , 0) == -1)
+	if (send(sClientFd, ((uint8_t*)pMsg), datalen , 0) == -1)
 	{
 		perror("send");
 		exit(1);

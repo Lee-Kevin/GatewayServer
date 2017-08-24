@@ -61,18 +61,28 @@ extern "C"
  **************************************************************************************************/
 #define AP_MAX_BUF_LEN 128
 #define SRPC_FRAME_HDR_SZ 2
-#define DEFAULT_PORT "1234"
+#define MY_AP_MAX_BUF_LEN 1024
+#define DEFAULT_PORT "11235"
 
 /**************************************************************************************************
  *                                        Type definitions
+ * 数据包结构定义
  **************************************************************************************************/
 typedef struct ATTR_PACKED
 {
-  uint8_t cmdId;
-  uint8_t len;
-  uint8_t pData[AP_MAX_BUF_LEN];
+  uint8_t pData[MY_AP_MAX_BUF_LEN];
 } msgData_t;
 
+// typedef struct ATTR_PACKED
+// {
+  // uint8_t cmdId;
+  // uint8_t len;
+  // uint8_t pData[AP_MAX_BUF_LEN];
+// } msgData_t;
+
+/*
+* 函数指针，用户的信息处理函数
+*/
 typedef void (*socketClientCb_t)( msgData_t *msg ); 
 
 /**************************************************************************************************
