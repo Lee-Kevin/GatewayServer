@@ -61,7 +61,7 @@ extern "C"
  **************************************************************************************************/
 #define AP_MAX_BUF_LEN 128
 #define SRPC_FRAME_HDR_SZ 2
-#define MY_AP_MAX_BUF_LEN 1024
+#define MY_AP_MAX_BUF_LEN 2048
 #define DEFAULT_PORT "11235"
 
 /**************************************************************************************************
@@ -84,6 +84,7 @@ typedef struct ATTR_PACKED
 * 函数指针，用户的信息处理函数
 */
 typedef void (*socketClientCb_t)( msgData_t *msg ); 
+
 
 /**************************************************************************************************
  *                                        Global Variables
@@ -158,6 +159,8 @@ void socketClientClose(void);
  *
  **************************************************************************************************/
 void socketClientSendData (msgData_t *pMsg);
+
+void getClientLocalPort(int *port, char **macaddr);
 
 
 #ifdef __cplusplus

@@ -59,6 +59,11 @@
 #include <sys/time.h>
 #include <unistd.h>
 
+
+#include <net/if.h>
+#include <sys/ioctl.h>
+#include <arpa/inet.h>
+
 #ifndef NPI_UNIX
 #include <netdb.h>
 #include <arpa/inet.h>
@@ -302,12 +307,26 @@ int socketClientInit(const char *devPath, socketClientCb_t cb)
 #else
     if (connect(sClientFd, resAddr->ai_addr, resAddr->ai_addrlen) == -1) {
         perror("connect");
+		printf("\nThere is something wrong\n");
         res = 0;
     }
 #endif
 
-    if (res == 1)
-    	printf("Connected.\n");
+    if (res == 1) {
+		printf("Connected.\n");
+		/*
+		* 当Client连接至server之后，获取本地端口
+		*/
+		// printf("Want to get the client port.\n");
+		// char guest_ip[20];
+		// struct sockaddr_in guest;
+		// socklen_t guest_len = sizeof(guest);
+		// getsockname(sClientFd, (struct sockaddr *)&guest, &guest_len);  
+		// //inet_ntop(AF_INET, &guest.sin_addr, guest_ip, sizeof(guest_ip)); 
+		// printf("Client  %s:%d\n",guest_ip, ntohs(guest.sin_port)); 
+		//getClientLocalPort();
+	}
+    	
 
 
 	int no = 0;
@@ -419,7 +438,7 @@ static void *handleThreadFunc (void *ptr)
 				messageCount);
 
 	} while (!done);
-
+    printf("\n-----I am going to exit handleThreadFunc-----\n");
 	return ptr;
 }
 
@@ -488,7 +507,7 @@ static void *rxThreadFunc (void *ptr)
 				// tmplen++;
 			// }
 			printf("\nThe data len n is : %d, tmplen is : %d\n",n,tmplen);
-			if (n <= 0)  /* 接收函数出错 */
+			if (n <= 0)  /* 接收函数出错, n=0 代表server 关闭 */
 			{
 				if (n < 0)
 					perror("recv");
@@ -515,7 +534,7 @@ static void *rxThreadFunc (void *ptr)
 							(uint8_t*)&(socketBuf[0][0]),
 							tmplen);
 					memset(socketBuf[0], 0, sizeof(socketBuf[0]));
-					printf("\n> I have already copy the message: %s\n",newMessage->message.pData);
+					//printf("\n> I have already copy the message: %s\n",newMessage->message.pData);
 					
 					// Place message in read list
 					if (rxBuf == NULL) {
@@ -771,6 +790,48 @@ void socketClientSendData (msgData_t *pMsg)
 		exit(1);
 	}
 }
+
+	
+	/*
+	struct sockaddr_in
+	{
+		unsigned short sin_family;
+		unsigned short sin_port;
+		struct in_addr sin_addr;
+		char sin_zero[8];
+	};
+	*/
+
+
+void getClientLocalPort(int *port, char **macaddr) {
+	
+	struct sockaddr_in guest;
+	socklen_t guest_len = sizeof(guest);
+	getsockname(sClientFd, (struct sockaddr *)&guest, &guest_len);  
+	debug_printf("[DBG]Client  Port :%d\n",ntohs(guest.sin_port));
+	
+    struct ifreq ifr;  
+
+    strcpy(ifr.ifr_name, "ens33");  
+    ioctl(sClientFd, SIOCGIFHWADDR, &ifr);  
+  
+    int i;  
+    char mac[18];  
+    for(i = 0; i < 6; ++i)  
+    {  
+		if (i == 5) {
+			sprintf(mac + 3*i, "%02x", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
+		} else {
+			sprintf(mac + 3*i, "%02x:", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
+		}
+    }  
+    debug_printf("[DBG]MAC: %s\n",mac);
+	
+	*port = ntohs(guest.sin_port);
+	sprintf(macaddr,"%s",mac);
+}
+
+
 
 /**************************************************************************************************
  **************************************************************************************************/
