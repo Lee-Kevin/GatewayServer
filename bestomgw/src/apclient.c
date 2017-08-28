@@ -192,8 +192,6 @@ int main(int argc, char *argv[])
 			//zbSocProcessRpc();
 		}
 	}
-	sendDatatoServer("This is client want to connect");
-
 	sleep(60);
 
 	socketClientClose();
@@ -204,7 +202,7 @@ int main(int argc, char *argv[])
 /*********************************************************************
  * @fn          socketClientCb
  *
- * @brief
+ * @brief		客户端接收数据处理函数
  *
  * @param
  *
@@ -212,10 +210,9 @@ int main(int argc, char *argv[])
  */
 void socketClientCb(msgData_t *msg)
 {
-	printf("\n**************************************************\n");
-	printf("\n>This is socketClientCb\n");
-	printf("\n> I have got the message: %s\n",msg->pData);
-	printf("\n**************************************************\n");
+
+	
+	data_handle(msg->pData);
 	// printf("socketClientCb: cmdId:%x\n",(msg->cmdId));
 
 	// func = srpcProcessIncoming[(msg->cmdId)];
