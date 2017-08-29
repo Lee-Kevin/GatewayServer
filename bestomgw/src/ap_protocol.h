@@ -24,6 +24,8 @@ void data_handle(char* data);
 int sendAPinfotoServer(char *mac, int port);
 
 void AP_Protocol_init(sendDatatoServer_t sendfunc);
+int sendDevinfotoServer(char *mac, int port);
+int sendDevDatatoServer();
 
 /*api result*/
 enum protocol_result{
@@ -48,6 +50,15 @@ struct sFrame_head {
     char *pdu;
 };
 typedef struct sFrame_head sFrame_head_t;
+
+/* The Frame struct */
+struct device_write {
+    char *devId;
+    uint16_t type;
+    uint16_t value;
+    void *next;
+};
+typedef struct device_write devWriteData_t;
 
 
 /*******************************************************************************

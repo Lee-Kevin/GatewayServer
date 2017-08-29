@@ -31,6 +31,7 @@
 #include "interface_scenelist.h"
 
 #include "ap_protocol.h"
+#include "cJSON.h"
 
 
 #define CONSOLEDEVICE "/dev/console"
@@ -183,14 +184,29 @@ int main(int argc, char *argv[])
 	while(1) {
 		struct pollfd zbfds[1];
 		int pollRet;
+		char chartemp[10];
+		
 		zbfds[0].fd  = zbSoc_fd;    /* 将Zigbee串口的描述符赋给 poll zbfds数组 */
 		zbfds[0].events = POLLIN; 
-		poll(zbfds,1,-1);           /* 阻塞等待串口接收数据 */
+		poll(zbfds,1,1);           /* 阻塞等待串口接收数据 */
 		
 		if (zbfds[0].revents) {
 			printf("Message from ZLL SoC\n");
 			//zbSocProcessRpc();
 		}
+		printf("> Please input the data number:\n>");
+	    scanf("%s",chartemp);
+		if(strcmp("2.1.1",chartemp) == 0) {
+			printf("\n Send device data to server\n");
+			sendDevDatatoServer();
+		} else if (strcmp("2.1.2",chartemp) == 0) {
+			printf("\n Send device info to server\n");
+			sendDevinfotoServer(mac, localport);
+		} else {
+			printf("\n Please input again!\n");
+		}
+		
+		
 	}
 	sleep(60);
 

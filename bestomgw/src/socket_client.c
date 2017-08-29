@@ -812,7 +812,7 @@ void getClientLocalPort(int *port, char **macaddr) {
 	
     struct ifreq ifr;  
 
-    strcpy(ifr.ifr_name, "ens33");  
+    strcpy(ifr.ifr_name, "br-lan");  
     ioctl(sClientFd, SIOCGIFHWADDR, &ifr);  
   
     int i;  
@@ -820,9 +820,9 @@ void getClientLocalPort(int *port, char **macaddr) {
     for(i = 0; i < 6; ++i)  
     {  
 		if (i == 5) {
-			sprintf(mac + 3*i, "%02x", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
+			sprintf(mac + 2*i, "%02x", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
 		} else {
-			sprintf(mac + 3*i, "%02x:", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
+			sprintf(mac + 2*i, "%02x", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
 		}
     }  
     debug_printf("[DBG]MAC: %s\n",mac);

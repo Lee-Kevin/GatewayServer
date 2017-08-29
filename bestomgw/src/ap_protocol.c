@@ -44,149 +44,14 @@ char *version[]={"1.0","1.1"};
 */
 static void Frame_packet_send (sFrame_head_t* _pFrame_Common);
 static void Frame_packet_recv (sFrame_head_t* _pFrame_Common);
+
+static void DataWritetoDev(devWriteData_t *data_towrite);
 /*
 * 初始化AP向Server发送数据的函数
 */
 void AP_Protocol_init(sendDatatoServer_t sendfunc) {
 	APSendMsgtoServer = sendfunc;
 }
-
-/*********************************************************************
- * @fn          sendAPinfotoServer
- *
- * @brief 当Client与Server建立通信之后，发送的第一个包
- *
- * @param
- *
- * @return
- */
-
-int sendAPinfotoServer(char *mac, int port) {
-    /*
-	* 创建JSON对象，存储AP信息
-	{  
-	   "sn":1,
-	   "version":"1.0",
-	   "netFlag":1,
-	   "cmdType":1,
-	   "pdu":{  
-		  "pduType":4102,
-		  "devDat":{  
-			 "port":6688,
-			 "apId":"11111111",
-			 "apName":"ap1"
-		  }
-	   }
-	}
-	*/
-	// char * macAddr;
-	sFrame_head_t Frame_toSend;
-	
-	printf(">This is sendAPinfotoServer\n");
-    cJSON * pduJsonObject = NULL;
-    cJSON * devDataJsonArray = NULL;
-    cJSON * devDataObject= NULL;
-    cJSON * devArray = NULL;
-    cJSON*  devObject = NULL;	
-	
-    pduJsonObject = cJSON_CreateObject();
-    if(NULL == pduJsonObject)
-    {
-        // create object faild, exit
-        cJSON_Delete(pduJsonObject);
-        return PROTOCOL_FAILED;
-    }
-    /*add pdu type to pdu object*/
-    cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_AP_REPORT_AP_INFO);
-	
-	devDataObject = cJSON_CreateObject();
-	if (NULL == devDataObject) {
-		        // create object faild, exit
-        cJSON_Delete(pduJsonObject);
-        return PROTOCOL_FAILED;
-	}
-	cJSON_AddItemToObject(pduJsonObject,"devData",devDataObject);
-	cJSON_AddNumberToObject(devDataObject,"port", port);
-	cJSON_AddStringToObject(devDataObject,"apId", mac);
-	cJSON_AddStringToObject(devDataObject,"apName",APNAME);
-	
-	//char * p = cJSON_Print(pJsonRoot);
-	
-	//debug_printf("The data is ");
-	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
-	
-	Frame_toSend.sn         = 1;
-	Frame_toSend.version    = 0;
-	Frame_toSend.netflag    = NET_TYPE_WAN;
-	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
-	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
-	
-	Frame_packet_send(&Frame_toSend);
-	cJSON_Delete(pduJsonObject);
-	return PROTOCOL_OK;
-}
-
-
-
-/*********************************************************************
- * @fn    sendCommReplytoServer
- *
- * @brief 通用回复函数
- *
- * @param 需要回复的包 ，还有结果
- *
- * @return
- */
-
-int sendCommReplytoServer(sFrame_head_t* reply_packet, int result) {
-
-	sFrame_head_t Frame_toSend;
-	
-	sFrame_head_t Frame_toReply = *reply_packet;
-	
-	printf(">This is sendAPinfotoServer\n");
-    cJSON * pduJsonObject = NULL;
-    cJSON * devDataJsonArray = NULL;
-    cJSON * devDataObject= NULL;
-    cJSON * devArray = NULL;
-    cJSON*  devObject = NULL;	
-	
-    pduJsonObject = cJSON_CreateObject();
-    if(NULL == pduJsonObject)
-    {
-        // create object faild, exit
-        cJSON_Delete(pduJsonObject);
-        return PROTOCOL_FAILED;
-    }
-    /*add pdu type to pdu object*/
-    cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_COMMON_RSP);
-	
-	devDataObject = cJSON_CreateObject();
-	if (NULL == devDataObject) {
-		        // create object faild, exit
-        cJSON_Delete(pduJsonObject);
-        return PROTOCOL_FAILED;
-	}
-	
-	cJSON_AddItemToObject(pduJsonObject,"devData",devDataObject);
-	cJSON_AddNumberToObject(devDataObject,"sn", Frame_toReply.sn);
-	cJSON_AddNumberToObject(devDataObject,"pduType", Frame_toReply.pdutype);
-	cJSON_AddNumberToObject(devDataObject,"result",result);
-	
-	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
-	
-	Frame_toSend.sn         = 1;
-	Frame_toSend.version    = 0;
-	Frame_toSend.netflag    = NET_TYPE_WAN;
-	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
-	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
-	
-	Frame_packet_send(&Frame_toSend);
-	cJSON_Delete(pduJsonObject);
-	return PROTOCOL_OK;
-}
-
-
 
 
 
@@ -299,7 +164,7 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
        // return PROTOCOL_FAILED;
     }
 	
-	printf"-----------------------------Frame_packet_recv-----------------------------\n");
+	printf("-----------------------------Frame_packet_recv-----------------------------\n");
 	
 	switch(_frame_head.pdutype) {
 	/* 通用回复处理 */
@@ -317,39 +182,56 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 			printf("Disable the device to join the ZigBee network\n");
 		}
 		myresult = SUCCESS;
+
+		if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
+		//	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pJsonRoot));
+		} else {
+			
+		}
 		break;	
 	/* 子设备控制命令 写入*/
 	case TYPE_DEV_WRITE:
 		debug_printf("[DBG] This is TYPE_DEV_WRITE %x\n",TYPE_DEV_WRITE);
 		int number1 = cJSON_GetArraySize(pJsondevData);
-		printf("The Array Size is %d",number1);
+		//printf("The Array Size is %d",number1);
 		for(int i = 0; i < number1; i++){
+			
+			devWriteData_t WriteData;
 			
 			devDataJson = cJSON_GetArrayItem(pJsondevData,i);
 			devIdJson = cJSON_GetObjectItem(devDataJson, "devId");
-			printf("devId:%s\n",devIdJson->valuestring);
+			
+			WriteData.devId = devIdJson->valuestring;
+			
+			//printf("WriteData.devId: %s",WriteData.devId);
+			
+			//printf("devId:%s\n",devIdJson->valuestring);
 			paramJson = cJSON_GetObjectItem(devDataJson, "param");
 			int number2 = cJSON_GetArraySize(paramJson);
-			printf(" number2:%d\n",number2);
+			//printf(" number2:%d\n",number2);
 
 			for(int j = 0; j < number2; j++){
 				paramDataJson = cJSON_GetArrayItem(paramJson, j);
 				typeJson = cJSON_GetObjectItem(paramDataJson, "type");
-				printf("  type:%d\n",typeJson->valueint);
+				WriteData.type = typeJson->valueint;
+			//	printf("  type:%d\n",typeJson->valueint);
 				valueJson = cJSON_GetObjectItem(paramDataJson, "value");
-				printf("  value:%d\n",valueJson->valueint);				
+				WriteData.value = valueJson->valueint;
+			//	printf("  value:%d\n",valueJson->valueint);	
+				DataWritetoDev(&WriteData);
 			}
-		}	
+		}
+		myresult = SUCCESS;
+		if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
+		//	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pJsonRoot));
+		} else {
+			
+		}
 		break;	
 	default:
 		break;
 	}
-	printf"-----------------------------Frame_packet_recv end-----------------------------\n");
-	if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
-	//	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pJsonRoot));
-	} else {
-		
-	}
+	printf("-----------------------------Frame_packet_recv end-----------------------------\n");
 	
 	// pduJsonObject = cJSON_Parse(_frame_head.pdu);
 	// cJSON_AddItemToObject(pJsonRoot, "pdu", pduJsonObject);
@@ -362,6 +244,330 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 		// debug_printf("[DBG] SEND packet to server successfully \n");
 	// }
 }
+
+
+
+/*********************************************************************
+ * @fn          sendAPinfotoServer
+ *
+ * @brief 当Client与Server建立通信之后，发送的第一个包
+ *
+ * @param
+ *
+ * @return
+ */
+
+int sendAPinfotoServer(char *mac, int port) {
+    /*
+	* 创建JSON对象，存储AP信息
+	{  
+	   "sn":1,
+	   "version":"1.0",
+	   "netFlag":1,
+	   "cmdType":1,
+	   "pdu":{  
+		  "pduType":4102,
+		  "devDat":{  
+			 "port":6688,
+			 "apId":"11111111",
+			 "apName":"ap1"
+		  }
+	   }
+	}
+	*/
+	// char * macAddr;
+	sFrame_head_t Frame_toSend;
+	
+	printf(">This is sendAPinfotoServer\n");
+    cJSON * pduJsonObject = NULL;
+    cJSON * devDataJsonArray = NULL;
+    cJSON * devDataObject= NULL;
+    cJSON * devArray = NULL;
+    cJSON*  devObject = NULL;	
+	
+    pduJsonObject = cJSON_CreateObject();
+    if(NULL == pduJsonObject)
+    {
+        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+    }
+    /*add pdu type to pdu object*/
+    cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_AP_REPORT_AP_INFO);
+	
+	devDataObject = cJSON_CreateObject();
+	if (NULL == devDataObject) {
+		        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+	}
+	cJSON_AddItemToObject(pduJsonObject,"devData",devDataObject);
+	cJSON_AddNumberToObject(devDataObject,"port", port);
+	cJSON_AddStringToObject(devDataObject,"apId", mac);
+	cJSON_AddStringToObject(devDataObject,"apName",APNAME);
+	
+	//char * p = cJSON_Print(pJsonRoot);
+	
+	//debug_printf("The data is ");
+	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
+	
+	Frame_toSend.sn         = 1;
+	Frame_toSend.version    = 0;
+	Frame_toSend.netflag    = NET_TYPE_WAN;
+	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
+	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
+	
+	Frame_packet_send(&Frame_toSend);
+	cJSON_Delete(pduJsonObject);
+	return PROTOCOL_OK;
+}
+
+
+
+/*********************************************************************
+ * @fn    sendCommReplytoServer
+ *
+ * @brief 通用回复函数
+ *
+ * @param 需要回复的包 ，还有结果
+ *
+ * @return
+ */
+
+int sendCommReplytoServer(sFrame_head_t* reply_packet, int result) {
+
+	sFrame_head_t Frame_toSend;
+	
+	sFrame_head_t Frame_toReply = *reply_packet;
+	
+	//printf(">This is sendCommReplytoServer\n");
+    cJSON * pduJsonObject = NULL;
+    cJSON * devDataJsonArray = NULL;
+    cJSON * devDataObject= NULL;
+    cJSON * devArray = NULL;
+    cJSON*  devObject = NULL;	
+	
+    pduJsonObject = cJSON_CreateObject();
+    if(NULL == pduJsonObject)
+    {
+        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+    }
+    /*add pdu type to pdu object*/
+    cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_COMMON_RSP);
+	
+	devDataObject = cJSON_CreateObject();
+	if (NULL == devDataObject) {
+		        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+	}
+	
+	cJSON_AddItemToObject(pduJsonObject,"devData",devDataObject);
+	cJSON_AddNumberToObject(devDataObject,"sn", Frame_toReply.sn);
+	cJSON_AddNumberToObject(devDataObject,"pduType", Frame_toReply.pdutype);
+	cJSON_AddNumberToObject(devDataObject,"result",result);
+	
+	//debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
+	debug_printf("[DBG] sendCommReplytoServer");
+	
+	Frame_toSend.sn         = 1;
+	Frame_toSend.version    = 0;
+	Frame_toSend.netflag    = NET_TYPE_WAN;
+	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
+	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
+	
+	Frame_packet_send(&Frame_toSend);
+	cJSON_Delete(pduJsonObject);
+	return PROTOCOL_OK;
+}
+
+/*********************************************************************
+ * @fn    sendDevinfotoServer
+ *
+ * @brief 发送子设备基本信息到Server
+ *
+ * @param mac, port
+ *
+ * @return
+ */
+
+
+
+int sendDevinfotoServer(char *mac, int port) {
+
+	sFrame_head_t Frame_toSend;
+	
+	//printf(">This is sendAPinfotoServer\n");
+    cJSON * pduJsonObject = NULL;
+    cJSON * devDataJsonArray = NULL;
+    cJSON * devDataObject= NULL;
+    cJSON * devArray = NULL;
+    cJSON*  devObject = NULL;	
+	
+    pduJsonObject = cJSON_CreateObject();
+    if(NULL == pduJsonObject)
+    {
+        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+    }
+    /*add pdu type to pdu object*/
+    cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_AP_REPORT_DEV_INFO);
+	
+	devDataObject = cJSON_CreateObject();
+	if (NULL == devDataObject) {
+		        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+	}
+	cJSON_AddItemToObject(pduJsonObject,"devData",devDataObject);
+	cJSON_AddNumberToObject(devDataObject,"port", port);
+	cJSON_AddStringToObject(devDataObject,"apId", mac);
+	cJSON_AddStringToObject(devDataObject,"apName",APNAME);
+	
+	devDataJsonArray = cJSON_CreateArray();
+	if (NULL == devDataJsonArray) {
+	    cJSON_Delete(devDataJsonArray);
+        return PROTOCOL_FAILED;
+	}
+	cJSON_AddItemToObject(devDataObject,"dev",devDataJsonArray);
+	for(int i=0; i<2; i++) {
+		cJSON* arrayObject = cJSON_CreateObject();
+		if(NULL == arrayObject) {
+			cJSON_Delete(arrayObject);
+			return PROTOCOL_FAILED;
+		}
+		if(i == 0) {
+			cJSON_AddStringToObject(arrayObject,"devId", "12345678");
+			cJSON_AddStringToObject(arrayObject,"devName", "device1");			
+		} else {
+			cJSON_AddStringToObject(arrayObject,"devId", "12345679");
+			cJSON_AddStringToObject(arrayObject,"devName", "device2");	
+		}
+		cJSON_AddItemToArray(devDataJsonArray,arrayObject);
+	}
+	
+	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
+	
+	Frame_toSend.sn         = 1;
+	Frame_toSend.version    = 0;
+	Frame_toSend.netflag    = NET_TYPE_WAN;
+	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
+	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
+	
+	Frame_packet_send(&Frame_toSend);
+	cJSON_Delete(pduJsonObject);
+	return PROTOCOL_OK;
+}
+
+/*********************************************************************
+ * @fn    sendDevDatatoServer
+ *
+ * @brief 发送子设备基本信息到Server
+ *
+ * @param mac, port
+ *
+ * @return
+ */
+
+
+
+int sendDevDatatoServer() {
+
+	sFrame_head_t Frame_toSend;
+	
+	//printf(">This is sendAPinfotoServer\n");
+    cJSON * pduJsonObject = NULL;
+    cJSON * devParamJsonArray = NULL;
+    cJSON * devDataObject= NULL;
+    cJSON * devArray = NULL;
+    cJSON*  devObject = NULL;	
+	
+    pduJsonObject = cJSON_CreateObject();
+    if(NULL == pduJsonObject)
+    {
+        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+    }
+    /*add pdu type to pdu object*/
+    cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_REPORT_DATA);
+	
+	devDataObject = cJSON_CreateObject();
+	if (NULL == devDataObject) {
+		        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+	}
+	cJSON_AddItemToObject(pduJsonObject,"devData",devDataObject);
+	cJSON_AddStringToObject(devDataObject,"devName", "device1");
+	cJSON_AddStringToObject(devDataObject,"devId", "12345678");
+	cJSON_AddStringToObject(devDataObject,"apName",APNAME);
+	
+	devParamJsonArray = cJSON_CreateArray();
+	if (NULL == devParamJsonArray) {
+	    cJSON_Delete(devParamJsonArray);
+        return PROTOCOL_FAILED;
+	}
+	cJSON_AddItemToObject(devDataObject,"param",devParamJsonArray);
+	for(int i=0; i<4; i++) {
+		cJSON* arrayObject = cJSON_CreateObject();
+		if(NULL == arrayObject) {
+			cJSON_Delete(arrayObject);
+			return PROTOCOL_FAILED;
+		}
+		if(i == 0) {
+			cJSON_AddNumberToObject(arrayObject,"type", 0x4006);
+			cJSON_AddNumberToObject(arrayObject,"value", 0x18);			
+		} else if( i==1 ){
+			cJSON_AddNumberToObject(arrayObject,"type", 0x4007);
+			cJSON_AddNumberToObject(arrayObject,"value", 0x32);		
+		} else if (i==2) {
+			cJSON_AddNumberToObject(arrayObject,"type", 0x4004);
+			cJSON_AddNumberToObject(arrayObject,"value", 80);		
+		} else if (i==3) {
+			cJSON_AddNumberToObject(arrayObject,"type", 0x4014);
+			cJSON_AddNumberToObject(arrayObject,"value", 1);	
+		}
+		cJSON_AddItemToArray(devParamJsonArray,arrayObject);
+	}
+	
+	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
+	
+	Frame_toSend.sn         = 1;
+	Frame_toSend.version    = 0;
+	Frame_toSend.netflag    = NET_TYPE_WAN;
+	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
+	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
+	
+	Frame_packet_send(&Frame_toSend);
+	cJSON_Delete(pduJsonObject);
+	return PROTOCOL_OK;
+}
+
+
+
+/*********************************************************************
+ * @fn     DataWritetoDev
+ *
+ * @brief  发送设备数据至串口
+ *
+ * @param
+ *
+ * @return
+ */
+
+void DataWritetoDev(devWriteData_t *data_towrite) {
+	devWriteData_t DatatoWrite = *data_towrite;
+	printf("------------This is DataWritetoDev-------------\n");
+	debug_printf("[DBG] The Device ID is %s\n",DatatoWrite.devId);
+	debug_printf("[DBG] The Para Type is %x\n",DatatoWrite.type);
+	debug_printf("[DBG] The value is %x\n",DatatoWrite.value);
+	printf("------------This is DataWritetoDev END-------------\n");
+}
+
 
 
 /*********************************************************************
