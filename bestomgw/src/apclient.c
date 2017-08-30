@@ -49,6 +49,8 @@
 
  sqlite3 *gdb=NULL;
 
+extern uint8_t ENABLEZIGBEE;
+ 
 /* 管理Zigbee设备相关函数 */
 uint8_t tlIndicationCb(epInfo_t *epInfo);
 uint8_t newDevIndicationCb(epInfo_t *epInfo);
@@ -181,6 +183,7 @@ int main(int argc, char *argv[])
 	printf("-------sendAPinfotoServer---------------\n");
 	sendAPinfotoServer(mac,localport);
 	
+	
 	while(1) {
 		struct pollfd zbfds[1];
 		int pollRet;
@@ -194,6 +197,13 @@ int main(int argc, char *argv[])
 			printf("Message from ZLL SoC\n");
 			//zbSocProcessRpc();
 		}
+		
+		if (ENABLEZIGBEE == 1) {
+			ENABLEZIGBEE = 0;
+			sendDevDataOncetoServer();
+		}
+		// sendDevDataOncetoServer();
+		// hello();
 		printf("> Please input the data number:\n>");
 	    scanf("%s",chartemp);
 		if(strcmp("2.1.1",chartemp) == 0) {
@@ -202,8 +212,13 @@ int main(int argc, char *argv[])
 		} else if (strcmp("2.1.2",chartemp) == 0) {
 			printf("\n Send device info to server\n");
 			sendDevinfotoServer(mac, localport);
+		} else if (strcmp("start",chartemp) == 0){
+			while(1) {
+				sendDevDatatoServer();
+				sleep(5);
+			}
 		} else {
-			printf("\n Please input again!\n");
+			printf("\n Please input again! \n");
 		}
 		
 		

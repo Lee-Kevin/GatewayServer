@@ -24,9 +24,11 @@ void data_handle(char* data);
 int sendAPinfotoServer(char *mac, int port);
 
 void AP_Protocol_init(sendDatatoServer_t sendfunc);
+
 int sendDevinfotoServer(char *mac, int port);
 int sendDevDatatoServer();
-
+int sendDevDataOncetoServer();
+extern uint8_t ENABLEZIGBEE;
 /*api result*/
 enum protocol_result{
 	PROTOCOL_OK = 0,
