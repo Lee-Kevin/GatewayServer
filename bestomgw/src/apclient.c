@@ -1,5 +1,6 @@
 /**************************************************************************************************
  Filename:       apclient.c
+ Author:         Jiankai Li
  Revised:        $Date: 2017-08-23 13:23:33 -0700 
  Revision:       $Revision: 246 $
 
@@ -32,6 +33,7 @@
 
 #include "ap_protocol.h"
 #include "cJSON.h"
+#include "interface_protocol.h"
 
 
 #define CONSOLEDEVICE "/dev/console"
@@ -80,8 +82,6 @@ void usage(char* exeName)
 	printf("Eample: ./%s /dev/ttyACM0\n", exeName);
 }
 
-		
-		
 void sendDatatoServer(char *str);
 void socketClientCb(msgData_t *msg);
 
@@ -96,12 +96,13 @@ int main(int argc, char *argv[])
 	char dbFilename[MAX_DB_FILENAMR_LEN];
 	printf("%s -- %s %s\n", argv[0], __DATE__, __TIME__);
 	
+
 	// int i;	
 
 	/* 
 	 * Client 默认连接的IP地址和端口可变
 	*/
-	sprintf(str,"%s","172.16.23.100:11235");
+	sprintf(str,"%s","192.168.1.100:11235");
 	
 	if (argc < 1) {
 		printf(
@@ -152,26 +153,18 @@ int main(int argc, char *argv[])
 	// }
 
 	//printf("zllMain: restoring device, group and scene lists\n");
-	sprintf(dbFilename, "%.*s/devicelistfile.dat",
-			strrchr(argv[0], '/') - argv[0], argv[0]);
-	printf("zllMain: device DB file name %s\n", dbFilename);
-	devListInitDatabase(dbFilename);
 	
-/*
-	sprintf(dbFilename, "%.*s/grouplistfile.dat", strrchr(argv[0], '/') - argv[0],
-			argv[0]);
-	printf("zllMain: group DB file name %s\n", dbFilename);
-	groupListInitDatabase(dbFilename);
-
-	sprintf(dbFilename, "%.*s/scenelistfile.dat", strrchr(argv[0], '/') - argv[0],
-			argv[0]);
-	printf("zllMain: scene DB file name %s\n", dbFilename);
-	sceneListInitDatabase(dbFilename);
-*/	
+	
 	/*
 	* 初始化socket通信，（以后需要添加重连机制）
 	*/
-	//AP_Protocol_init(sendDatatoServer); /* 初始化AP传送至Server的函数 */
+	
+    sprintf(dbFilename, "%.*s/APDatabase.db",
+            strrchr(argv[0], '/') - argv[0], argv[0]);
+    printf("the dbFilename is %s\n", dbFilename);
+	APDatabaseInit(dbFilename);
+	
+
 	socketClientInit(str, socketClientCb);
 	
     getClientLocalPort(&localport, &mac);

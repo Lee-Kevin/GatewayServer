@@ -12,7 +12,7 @@ extern "C"
 #include <sys/time.h>
 #include <stdbool.h>
 #include <errno.h>
-#include <time.h>
+
 
 /*
 * 函数指针，用户的信息处理函数

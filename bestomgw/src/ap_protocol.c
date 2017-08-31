@@ -1,9 +1,19 @@
+/**************************************************************************************************
+ Filename:       ap_protocol.c
+ Author:         Jiankai Li
+ Revised:        $Date: 2017-08-30 13:23:33 -0700 
+ Revision:       
+
+ Description:    This is a file that can deal with the data from M1
+
+ 
+ **************************************************************************************************/
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-
+#include <time.h>
 #include "socket_client.h"
 #include "ap_protocol.h"
 #include "cJSON.h"
@@ -15,16 +25,6 @@
 #else
 #define debug_printf(fmt, ...)
 #endif
-
-#define __BIG_DEBUG__
-
-#ifdef __BIG_DEBUG__
-#define debug_printf(fmt, ...) printf( fmt, ##__VA_ARGS__)
-#else
-#define debug_printf(fmt, ...)
-#endif
-
-
 
 #define VERSION                       "1.0"
 #define APNAME                        "ap1"
@@ -48,6 +48,7 @@ static void Frame_packet_send (sFrame_head_t* _pFrame_Common);
 static void Frame_packet_recv (sFrame_head_t* _pFrame_Common);
 
 static void DataWritetoDev(devWriteData_t *data_towrite);
+
 /*
 * 初始化AP向Server发送数据的函数
 */
@@ -115,9 +116,7 @@ void data_handle(char* data)
     if(NULL == pduDataJson){
         printf("devData null”\n");
 		return;
-
     }
-
 	Frame_RecData.sn      = snJson->valueint;
 	Frame_RecData.version = verJson->valueint;
 	Frame_RecData.netflag = netflagJson->valueint;
@@ -281,7 +280,6 @@ int sendAPinfotoServer(char *mac, int port) {
 	*/
 	// char * macAddr;
 	sFrame_head_t Frame_toSend;
-	
 	printf(">This is sendAPinfotoServer\n");
     cJSON * pduJsonObject = NULL;
     cJSON * devDataJsonArray = NULL;
