@@ -1,0 +1,10 @@
+
+CREATE TABLE Devlist(
+   ID INT PRIMARY KEY     		NOT NULL,
+   DeviceId           TEXT      NOT NULL,
+   DeviceName         TEXT      NOT NULL,
+   DeviceStatus       INT       NOT NULL,
+   Note        		  TEXT
+);
+
+INSERT INTO Devlist VALUES (1,"12345670","s4",1,"test")

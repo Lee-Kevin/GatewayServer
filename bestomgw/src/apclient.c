@@ -6,7 +6,7 @@
 
  Description:    This file contains an apclient for the M1 Gateway sever
 
- 
+
  **************************************************************************************************/
 #define _GNU_SOURCE
 #include <fcntl.h>
@@ -94,11 +94,18 @@ int main(int argc, char *argv[])
 	int localport;
 	int zbSoc_fd;
 	char dbFilename[MAX_DB_FILENAMR_LEN];
-	printf("%s -- %s %s\n", argv[0], __DATE__, __TIME__);
 	
+	/* Database Test */
+	sDevlist_info_t  test_device;
+	char *addr = "1234567A";
+	char *note = "Update";
+	test_device.status = 0;
+	test_device.addr = addr;
+	test_device.note = note;
+	
+	printf("%s -- %s %s\n", argv[0], __DATE__, __TIME__);
 
 	// int i;	
-
 	/* 
 	 * Client 默认连接的IP地址和端口可变
 	*/
@@ -164,8 +171,11 @@ int main(int argc, char *argv[])
     printf("the dbFilename is %s\n", dbFilename);
 	APDatabaseInit(dbFilename);
 	
+//	InsertDatatoDatabase(dbFilename,NULL);
 
-	socketClientInit(str, socketClientCb);
+	UpdateDatatoDatabase(dbFilename,&test_device);
+	
+//	socketClientInit(str, socketClientCb);
 	
     getClientLocalPort(&localport, &mac);
 	
