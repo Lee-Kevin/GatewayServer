@@ -1,5 +1,6 @@
 ﻿/*
  * zbSocCmd.c
+ * Zigbee硬件通信相关函数
  *
  * This module contains the API for the zll SoC Host Interface.
  *
@@ -314,6 +315,9 @@ tio.c_cflag = B115200 | CRTSCTS | CS8 | CLOCAL | CREAD;
        
     tio.c_oflag &= ~OPOST;  
 
+	// tio.c_cc[VTIME] = 1;
+	// tio.c_cc[VMIN] = 32;
+	
 	tcflush(serialPortFd, TCIFLUSH);
 	tcsetattr(serialPortFd, TCSANOW, &tio);
 
@@ -327,80 +331,7 @@ tio.c_cflag = B115200 | CRTSCTS | CS8 | CLOCAL | CREAD;
 
 int32_t init_serial(char *devicePath)
 {
-    int len, nlen;  
-    int n = 0;     	
-	struct termios opt;   
-    unsigned char read_buf[256];  
-    unsigned char write_buf[256];  	
-	//pthread_t sereadid;//??? ??
-		
-	char sercom[20];//??
-	
-	//strcpy(sercom, GetIniKeyString("serial","sercom",sinipath));
-	//ConfigGetKey(sinipath, "serial", "sercom", sercom);
-	
-	printf("-->%d, sercom=%s \n ",__LINE__, sercom);
-	
-	   // fdserwrite = open("/dev/ttyUSB0", O_RDWR|O_NOCTTY);  //?? ????
-	//fdserwrite = open("/dev/ttyUSB0", O_RDWR|O_NOCTTY|O_NDELAY);  //??? ,
-	//fdserwrite = open(sercom, O_RDWR|O_NOCTTY|O_NONBLOCK);  //??? , O_RDWR | O_NOCTTY | O_NONBLOCK);
-	//fdserwrite = open(sercom, O_RDWR|O_NOCTTY);  //?? ????
-	//fdserwrite = open("/dev/ttyUSB0", O_RDWR|O_NOCTTY);  //?? ????
-	
-	
-	//serialPortFd = open(devicePath, O_RDWR|O_NOCTTY);  //?? ????
-	serialPortFd = open(devicePath, O_RDWR|O_NOCTTY|O_NONBLOCK);  //?? ????
-	
 
-
-		
-	   
-    if(serialPortFd == -1)  
-    {  
-        perror("open serial 0\n");  
-        exit(0);  
-    }  
-      
-    tcgetattr(serialPortFd, &opt);        
-    bzero(&opt, sizeof(opt));  
-          
-    tcflush(serialPortFd, TCIOFLUSH);  
-      
-    cfsetispeed(&opt, B115200);  
-    cfsetospeed(&opt, B115200);  
-          
-    //cfsetispeed(&opt, B57600);  
-    //cfsetospeed(&opt, B57600);  		  
-		  
-    opt.c_cflag &= ~CSIZE;    
-    opt.c_cflag |= CS8;     
-    opt.c_cflag &= ~CSTOPB;   
-    opt.c_cflag &= ~PARENB;   
-    opt.c_cflag &= ~CRTSCTS;  
-    opt.c_cflag |= (CLOCAL | CREAD);  
-       
-    opt.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);  
-       
-    opt.c_oflag &= ~OPOST;  
-          
-    // opt.c_cc[VTIME] = 0;  
-    //opt.c_cc[VMIN] = 0;  
-
-    opt.c_cc[VTIME] = 200;  
-    opt.c_cc[VMIN] = 200;  
-       	   
-    tcflush(serialPortFd, TCIOFLUSH);  
-
-	return serialPortFd;
-	//FD_ZERO(&rd);
-	//FD_SET(fdserwrite,&rd);	
-		
-	//        fdserwrite = open("/dev/ttyUSB0", O_RDWR|O_NOCTTY|O_NDELAY);  //??? ,
-	// fdserwrite = open("/dev/ttyUSB0", O_RDWR|O_NOCTTY);  //?? ????
-
-
-	
-	
 }		 
 
 
@@ -423,31 +354,12 @@ void zbSocClose(void)
  */
 static void zbSocTransportWrite(uint8_t* buf, uint8_t len)
 {
-	int remain = len;
-	int offset = 0;
-#if 0
-	//printf("zbSocTransportWrite : len = %d\n", len);
 
-	while (remain > 0)
-	{
-		int sub = (remain >= 8 ? 8 : remain);
-		//printf("writing %d bytes (offset = %d, remain = %d)\n", sub, offset,
-		//		remain);
-		write(serialPortFd, buf + offset, sub);
-
-		tcflush(serialPortFd, TCOFLUSH);
-		usleep(5000);
-		remain -= 8;
-		offset += 8;
-	}
-#else
-	
-printf("-->%s,%d serialPortFd=%d \n",__FUNCTION__,__LINE__,serialPortFd);
+//printf("-->%s,%d serialPortFd=%d \n",__FUNCTION__,__LINE__,serialPortFd);
 	write (serialPortFd, buf, len);
-	prt_debug("serial write ",buf, len);
+	//prt_debug("[DBG] serial write ",buf, len);
 	tcflush(serialPortFd, TCOFLUSH);
 
-#endif
 	return;
 }
 
@@ -572,78 +484,36 @@ void zbSocSendResetToFn(void)
  *
  * @return  none
  */
-void zbSocOpenNwk(uint8_t duration)
-{/*
-	uint16_t srcNwkAddr = 0xFFFD; //Everyone with RxOnWhenIdle == TRUE
-
-	uint8_t mgmtPermit[] =
-	{ 0xFE, 5, //RPC payload Len 
-	MT_RPC_CMD_SREQ | MT_RPC_SYS_ZDO,
-	0x36, //MT_ZDO_MGMT_PERMIT_JOIN_REQ
-	afAddrBroadcast, //addr mode
-	(srcNwkAddr & 0x00ff), //Src Nwk Addr - To send the bind message to
-	(srcNwkAddr & 0xff00) >> 8, //Src Nwk Addr - To send the bind message to
-	duration, //Dst endpoint for the binding
-	1, //trust center significance set
-	0x00 //FCS - fill in later
-	};
-
-	uint8_t localPermit[] =
-	{ APPCMDHEADER(13) 0x06, //Data Len
-			0x02, //Address Mode
-			0x00,//2dummy bytes
-			0x00, ZLL_MT_APP_RPC_CMD_PERMIT_JOIN,
-			duration, //
-			0x00, //
-			0x00 //FCS - fill in later
-			};
-
-	printf("zbSocOpenNwk: duration %ds\n", duration);
-
-	calcFcs(localPermit, sizeof(localPermit));
-	zbSocTransportWrite(localPermit, sizeof(localPermit));
-
-	//wait for message to be consumed
-	usleep(30);
-
-	calcFcs(mgmtPermit, sizeof(mgmtPermit));
-	zbSocTransportWrite(mgmtPermit, sizeof(mgmtPermit));
-
-		write_buf[0] = 0xFE;
-			write_buf[1] = 0x0B;
-			write_buf[2] = 0x02;
-			write_buf[3] = 0x01;
-			write_buf[4] = 0x02;
-			write_buf[5] = 0x00;
-			write_buf[6] = 0x00;
-			write_buf[7] = 0x00;
-			write_buf[8] = 0x88;
-			
-			write_buf[9] = 0x3C;   // 60��=0x3C  25 �� =0x19  0xFF;  //���ô�
-			//write_buf[10] = 0xFF;
-			write_buf[10]=Calcxor(write_buf,10);
-					
-			nlen = 11;
-			*/
-				uint16_t srcNwkAddr = 0xFFFD; //Everyone with RxOnWhenIdle == TRUE
-
-	uint8_t mgmtPermit[] =
-	{ 0xFE, 0x0B, //RPC payload Len 
-	0x02,
-	0x01, //MT_ZDO_MGMT_PERMIT_JOIN_REQ
-	0x02,//afAddrBroadcast, //addr mode
-	 0x00, //Src Nwk Addr - To send the bind message to
-	0x00, //Src Nwk Addr - To send the bind message to
-	0x00,
-	transSeqNumber++,//0x88,
-	duration, //Dst endpoint for the binding
-	0x00 //FCS - fill in later
-	};
-
-
-
-	calcFcs(mgmtPermit, sizeof(mgmtPermit));
-	zbSocTransportWrite(mgmtPermit, sizeof(mgmtPermit));
+void zbSocOpenNwk(uint8_t duration) {
+	
+	// uint8_t mgmtPermit[] =
+	// {0x55, 0x3A,\
+	// 0x20, transSeqNumber++, 
+	// 0x01, 0x00, 
+	// 0x02, 
+	// 0x01, 
+	// 0xFD, 0x02,
+	// 0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, 
+	// 0x3B,
+	// 0x00, 0x00, 
+	// 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
+	// 0xEC
+	// };
+	
+	uSOC_packet_t openNetWork;
+	
+	openNetWork.frame.payload_len = 0x01;
+	openNetWork.frame.DeviceID    = 0xFD;
+	openNetWork.frame.DeviceType  = ~0xFD;
+	memset(openNetWork.frame.payload,0,sizeof(openNetWork.frame.payload));
+	openNetWork.frame.payload[0] = 0xFF;
+	memset(openNetWork.frame.shortAddr,0,sizeof(openNetWork.frame.shortAddr));
+	memset(openNetWork.frame.longAddr,0,sizeof(openNetWork.frame.longAddr));
+	
+	zbSocSendCommand(&openNetWork);
+	// //calcFcs(mgmtPermit, sizeof(mgmtPermit));
+	// zbSocTransportWrite(mgmtPermit, sizeof(mgmtPermit));
+	// //zbSocTransportWrite("123456789", strlen("123456789"));
 }
 
 /*********************************************************************
@@ -884,8 +754,8 @@ void zbSocSetHue(uint8_t hue, uint16_t time, uint16_t dstAddr, uint8_t endpoint,
 /*********************************************************************
  * @fn      zbSocSetSat
  *
- * @brief   Send the satuartion command to a ZLL light.
- *
+ * @briefSend the satuartion command to a ZLL light.
+ *   
  * @param   sat - 0-128 : 0=white, 128: fully saturated color  
  * @param   dstAddr - Nwk Addr or Group ID of the Light(s) to be controled.
  * @param   endpoint - endpoint of the Light.
@@ -1789,274 +1659,155 @@ static void processRpcSysDbg(uint8_t *rpcBuff)
  *************************************************************************************************/
 void zbSocProcessRpc(void)
 {
-	uint8_t rpcLen, bytesRead, sofByte, *rpcBuff, rpcBuffIdx;
-	static uint8_t retryAttempts = 0;
 
-	//read first byte and check it is a SOF
-	
-	
-	read(serialPortFd, &sofByte, 1);
-	if (sofByte == MT_RPC_SOF)
-	{
-		retryAttempts = 0;
-
-		//read len
-		bytesRead = read(serialPortFd, &rpcLen, 1);
-
-		if (bytesRead == 1)
-		{
-			//allocating RPC payload (+ cmd0, cmd1 and fcs)
-			rpcLen += 3;
-
-			rpcBuff = malloc(rpcLen);
-
-
-                    
-			//non blocking read, so we need to wait for the rpc to be read
-			rpcBuffIdx = 0;
-			while (rpcLen > 0)
-			{
-				//read rpc
-				bytesRead = read(serialPortFd, &(rpcBuff[rpcBuffIdx]), rpcLen);
-				
-				prt_debug("serial respone ",&rpcBuff, rpcLen);
-//
-				//check for error
-				if (bytesRead > rpcLen)
-				{
-					//there was an error
-					printf("zbSocProcessRpc: read of %d bytes failed - %s\n", rpcLen,
-							strerror(errno));
-
-					if (retryAttempts++ < 5)
-					{
-						//sleep for 10ms
-						usleep(10000);
-						//try again
-						bytesRead = 0;
-					}
-					else
-					{
-						//something went wrong.
-						printf("zbSocProcessRpc: failed\n");
-						free(rpcBuff);
-						return;
-					}
-				}
-
-				rpcLen -= bytesRead;
-				rpcBuffIdx += bytesRead;
-			}
-
-			//printf("zbSocProcessRpc: Processing CMD0:%x, CMD1:%x\n", rpcBuff[0],
-			//		rpcBuff[1]);
-			//Read CMD0
-			switch (rpcBuff[0] & MT_RPC_SUBSYSTEM_MASK)
-			{
-				case MT_RPC_SYS_DBG:
-				{
-					processRpcSysDbg(rpcBuff);
-					break;
-				}
-				case MT_RPC_SYS_APP:
-				{
-					processRpcSysApp(rpcBuff);
-					break;
-				}
-
-				case MT_RPC_SYS_ZDO:
-				{
-					processRpcSysZdo(rpcBuff);
-					break;
-				}
-
-				case MT_RPC_SYS_UTIL:
-				{
-					processRpcSysUtil(rpcBuff);
-					break;
-				}
-
-				default:
-				{
-					//printf("zbSocProcessRpc: CMD0:%x, CMD1:%x, not handled\n", rpcBuff[0] , rpcBuff[1])
-					break;
-				}
-			}
-
-			free(rpcBuff);
-		}
-		else
-		{
-			printf("zbSocProcessRpc: No valid Start Of Frame found\n");
-		}
-	}
-
-	return;
 }
 
 int serial_recv_process(unsigned char *read_buf, unsigned int n)
 {
-#if  GW_DEBUG
-       printf("serial read: FE %02x ",n+2);
-	gw_debug("", read_buf, n);
-#endif
-	char *zErrMsg = 0;
-	char **azResult;
-	int nrow, ncolumn;
-	char tmp_buf[32], str_buf[256], str_sql[256];
-	unsigned char write_buf[256];
-
-
+	
+	printf("***This is serial_recv_process \n");
+	
 	return 0;
 }
 
-void myzbSocProcessRpc(void)
-{
-#if 0	
-	uint8_t rpcLen, bytesRead, sofByte, *rpcBuff, rpcBuffIdx;
-	static uint8_t retryAttempts = 0;
+/*************************************************************************************************
+ * @fn      zbSocSendCommand()
+ *
+ * @brief   read and process the data from the Zigbee controller
+ *
+ * @param   none
+ *
+ * @return  
+ *************************************************************************************************/
 
-	//read first byte and check it is a SOF
-	
-	
-	read(serialPortFd, &sofByte, 1);
-	if (sofByte == MT_RPC_SOF)
-	{
-		retryAttempts = 0;
-
-		//read len
-		bytesRead = read(serialPortFd, &rpcLen, 1);
-
-		if (bytesRead == 1)
-		{
-			//allocating RPC payload (+ cmd0, cmd1 and fcs)
-			rpcLen += 3;
-
-			rpcBuff = malloc(rpcLen);
-
-
-                    
-			//non blocking read, so we need to wait for the rpc to be read
-			rpcBuffIdx = 0;
-			while (rpcLen > 0)
-			{
-				//read rpc
-				bytesRead = read(serialPortFd, &(rpcBuff[rpcBuffIdx]), rpcLen);
-				
-				prt_debug("serial respone ",&rpcBuff, rpcLen);
-//
-				//check for error
-				if (bytesRead > rpcLen)
-				{
-					//there was an error
-					printf("zbSocProcessRpc: read of %d bytes failed - %s\n", rpcLen,
-							strerror(errno));
-
-					if (retryAttempts++ < 5)
-					{
-						//sleep for 10ms
-						usleep(10000);
-						//try again
-						bytesRead = 0;
-					}
-					else
-					{
-						//something went wrong.
-						printf("zbSocProcessRpc: failed\n");
-						free(rpcBuff);
-						return;
-					}
-				}
-
-				rpcLen -= bytesRead;
-				rpcBuffIdx += bytesRead;
-			}
-
-			//printf("zbSocProcessRpc: Processing CMD0:%x, CMD1:%x\n", rpcBuff[0],
-			//		rpcBuff[1]);
-			//Read CMD0
-			switch (rpcBuff[0] & MT_RPC_SUBSYSTEM_MASK)
-			{
-				case MT_RPC_SYS_DBG:
-				{
-					processRpcSysDbg(rpcBuff);
-					break;
-				}
-				case MT_RPC_SYS_APP:
-				{
-					processRpcSysApp(rpcBuff);
-					break;
-				}
-
-				case MT_RPC_SYS_ZDO:
-				{
-					processRpcSysZdo(rpcBuff);
-					break;
-				}
-
-				case MT_RPC_SYS_UTIL:
-				{
-					processRpcSysUtil(rpcBuff);
-					break;
-				}
-
-				default:
-				{
-					//printf("zbSocProcessRpc: CMD0:%x, CMD1:%x, not handled\n", rpcBuff[0] , rpcBuff[1])
-					break;
-				}
-			}
-
-			free(rpcBuff);
-		}
-		else
-		{
-			printf("zbSocProcessRpc: No valid Start Of Frame found\n");
-		}
+void zbSocSendCommand(uSOC_packet_t *packet) {
+	uSOC_packet_t __packet = *packet;
+	// uSOC_packet_t __packet = *packet;
+	__packet.frame.head_1		 = 0x55;
+	__packet.frame.head_2		 = 0x3A;
+	__packet.frame.length		 = 0x20;
+	__packet.frame.seqnum		 = transSeqNumber++;
+	__packet.frame.version[0]	 = 0x01;
+	__packet.frame.version[1]    = 0x00;
+	__packet.frame.cmdtype 		 = 0x02;  // 系统下发命令
+	// __packet.frame.payload_len= 0x55;
+	// __packet.frame.DeviceID   = 0x55;
+	// __packet.frame.DeviceType = 0x55;
+	// __packet.frame.payload    = 0x55;
+    __packet.frame.addrFlag  	 = 0x3B;
+    // __packet.frame.shortAddr  = 0x3B;
+    // __packet.frame.longAddr   = 0x3B;
+    __packet.frame.checkSum      = checkData(__packet.data, sizeof(__packet.data)-1);
+//	printf("[DBG] The packetData size is %d\n", sizeof(__packet.data));
+	printf("[DBG] The packetData is :");
+	for (int i=0; i<sizeof(__packet.data); i++) {
+		printf("%2x-",__packet.data[i]);
 	}
-#endif 
+	
+	
+	zbSocTransportWrite(__packet.data, sizeof(__packet.data));
+}
 
+/*************************************************************************************************
+ * @fn      myzbSocProcessRpc()
+ *
+ * @brief   read and process the data from the Zigbee controller
+ *
+ * @param   none
+ *
+ * @return  
+ *************************************************************************************************/
+
+void myzbSocProcessRpc(void) {
 	//int serial_fd = *(int *)fd;
 	unsigned char buffer[1024*2] = {0};//数据缓冲区
 	unsigned char read_buf[1024], data[256];
-	int i, head = 0, tail = 0;
-	int nready, nread, dlen;
+	int i = 0, head = 0;
+	int nready, nread;
+	static int dlen = 0, tail = 0;
 	
 	memset(read_buf, 0, sizeof(read_buf));
+
 	nread = read(serialPortFd, read_buf, sizeof(read_buf));
-	if(nread > 0 && nread < (sizeof(buffer) - tail))
-	{
-		memcpy(&buffer[tail], read_buf, nread);
-		tail += nread;
-
-//					printf("serial read nread = %d\ttail = %d\n", nread, tail);
-		/* 寻找包头 */
-		i = 0;
-		while(i < tail && buffer[i] != 0xFE) i++;
-		/* 处理缓冲区内完整的数据包 */
-		while(buffer[i] == 0xFE && buffer[i+1] <= tail-i)
-		{
-			memset(data, 0, sizeof(data));
-			dlen = buffer[i+1];
-			memcpy(data, &buffer[i], dlen);
-		       WriteZigbeeLog(slogpath, data, dlen);
-			 #if  0//GW_DEBUG
-				gw_debug("serial read: ", &data[0], dlen);
-			#endif
-			serial_recv_process(&data[2], dlen - 2);
-
-			/*移动数据*/
-			head = i + dlen;
-			tail -= head;
-			if(tail > 0)
-			{
-				memmove(buffer, &buffer[head], tail);
-			}
-
-			/* 寻找包头 */
+	
+	// printf("------The data is:");
+	
+	for (int j=0; j<nread;j++) {
+		printf("%2x ",read_buf[j]);
+	}
+	
+	if (nread > 0 && nread < (sizeof(buffer) - tail)) {
+		memcpy(&buffer[head], read_buf, nread);
+		
+		if(dlen == 0) {  						  /* 对于第一包数据，需要找到帧头 */
 			i = 0;
-			while(i < tail && buffer[i] != 0xFE) i++;
+			while(i < nread && buffer[i] != 0x55 && buffer[i+1] != 0x3A) i++;  // 找到帧头
+			if (buffer[i] == 0x55 && buffer[i+1] == 0x3A) {
+				memset(data, 0, sizeof(data));
+				dlen = buffer[i+2];       		  /* 串口数据里的第三个字节代表 帧长度 */
+				tail += (nread-i);                /* 尾部为实际数据的尾部 */
+				memcpy(data, &buffer[i], tail);  
+				printf("[DBG], the data len is %d, the index is %d, the tail is %d\n",dlen, i, tail);
+			}			
+		} else {                                  /* 非第一包数据 */
+			memcpy(&data[tail], &buffer[i], nread);  
+			tail += nread;
+			printf("[DBG] **the tail is %d\n",tail);
+			if(tail >= dlen) {
+				if( checkRead(data, dlen) ) {
+					printf("pass the checkRead \n");
+					serial_recv_process(&data[6], dlen - 6); 
+				} else {
+					printf("Don't pass the checkRead \n");
+				}
+				dlen = 0;
+				tail = 0;
+			}
 		}
 	}	
 	return;
+}
+
+/*************************************************************************************************
+ * @fn      uint8_t checkData(uint8_t * data, uint16_t len) 
+ *
+ * @brief   计算校验和
+ *
+ * @param   none
+ * 
+ * @return  1 通过校验
+ * 			0 未通过校验
+ *************************************************************************************************/
+
+uint8_t checkData(uint8_t *data, uint16_t len) {
+	uint16_t sum = 0;
+	for (uint16_t i=0; i<len-1; i++) {
+		sum += data[i];
+	}
+	printf("[DBG] The checkdata should be is %2x \n", sum&0xFF);
+	return sum&0xFF;
+}
+
+/*************************************************************************************************
+ * @fn      uint8_t checkRead(uint8_t * data, uint16_t len) 
+ *
+ * @brief   check the data from zigbee
+ *
+ * @param   none
+ * 
+ * @return  1 通过校验
+ * 			0 未通过校验
+ *************************************************************************************************/
+
+uint8_t checkRead(uint8_t *data, uint16_t len) {
+	uint16_t sum = 0;
+	for (uint16_t i=0; i<len-2; i++) {
+		sum += data[i];
+	}
+	printf("[DBG] 3the checkdata should be is %x \n", sum&255);
+	if ( (uint8_t)(sum&0xff) == data[len-1] ) {
+		return 1;
+	} else {
+		return 0;
+	}
 }

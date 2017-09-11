@@ -46,6 +46,33 @@ extern "C" {
 #include <stdint.h>
 #include "utils.h"
 /********************************************************************/
+
+// 自定义数据包里的结构体
+
+struct sFrame_packet {
+    uint8_t 	head_1;
+    uint8_t 	head_2;
+    uint8_t 	length;
+	uint8_t		seqnum;
+	uint8_t 	version[2];
+    uint8_t 	cmdtype;
+	uint8_t 	payload_len;
+	uint8_t 	DeviceID;
+	uint8_t 	DeviceType;
+	uint8_t     payload[10];
+	uint8_t     addrFlag;
+	uint8_t     shortAddr[2];
+	uint8_t     longAddr[8];
+	uint8_t     checkSum;
+	
+};
+typedef struct sFrame_packet sFrame_packet_t;
+
+union uFrame_packet {
+	uint8_t			 data[32];
+	sFrame_packet_t  frame;
+};
+typedef union uFrame_packet uSOC_packet_t;
 // ZLL Soc Types
 typedef enum
 {
@@ -120,6 +147,14 @@ void zbSocRegisterCallbacks(zbSocCallbacks_t zbSocCallbacks);
 void zbSocClose(void);
 void zbSocProcessRpc(void);
 
+
+/******************************************************************************************
+ 自定义添加
+******************************************************************************************/
+uint8_t checkData(uint8_t *data, uint16_t len);
+uint8_t checkRead(uint8_t *data, uint16_t len);
+void myzbSocProcessRpc(void);
+void zbSocSendCommand(uSOC_packet_t *packet);
 //ZLL API's
 void zbSocTouchLink(void);
 void zbSocResetToFn(void);
@@ -158,6 +193,8 @@ void zbSocGetState(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode);
 void zbSocGetLevel(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode);
 void zbSocGetHue(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode);
 void zbSocGetSat(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode);
+
+
 #ifdef __cplusplus
 }
 #endif

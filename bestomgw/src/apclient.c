@@ -111,7 +111,7 @@ int main(int argc, char *argv[])
 	*/
 	sprintf(str,"%s","192.168.1.100:11235");
 	
-	if (argc < 1) {
+	if (argc < 2) {
 		printf(
 				"Expected 1 and got %d params Usage: %s <addr mode> <ep> <group name>\n",
 				argc, argv[0]);
@@ -137,30 +137,27 @@ int main(int argc, char *argv[])
 	*/
 /* 宿主机上无串口设备 lee*/	
 	// // accept only 1
-	// if (argc != 2)
-	// {
-		// //usage(argv[0]);
-		// printf("attempting to use /dev/ttyACM0\n");
+	if (argc != 3)
+	{
+		//usage(argv[0]);
+		printf("attempting to use /dev/ttyS0\n");
 		
-		// zbSoc_fd = zbSocOpen("/dev/ttyUSB0");
+		zbSoc_fd = zbSocOpen("/dev/ttyS0");
+		printf("Open zbSoc_fd : %d\n",zbSoc_fd);
+		//if (zbSoc_fd<0 )
+		//	{zbSoc_fd = zbSocOpen("/dev/null");}
+		//init_serial();
+	}
+	else
+	{
+		zbSoc_fd = zbSocOpen(argv[argc-1]);
+		printf("Open zbSoc_fd : %d\n",zbSoc_fd);
+	}
 
-		// //if (zbSoc_fd<0 )
-		// //	{zbSoc_fd = zbSocOpen("/dev/null");}
-		// //init_serial();
-
-	// }
-	// else
-	// {
-		// zbSoc_fd = zbSocOpen(argv[1]);
-	// }
-
-	// if (zbSoc_fd == -1)
-	// {
-		// exit(-1);
-	// }
-
-	//printf("zllMain: restoring device, group and scene lists\n");
-	
+	if (zbSoc_fd == -1)
+	{
+		exit(-1);
+	}
 	
 	/*
 	* 初始化socket通信，（以后需要添加重连机制）
@@ -168,25 +165,26 @@ int main(int argc, char *argv[])
 	
     sprintf(dbFilename, "%.*s/APDatabase.db",
             strrchr(argv[0], '/') - argv[0], argv[0]);
-    printf("the dbFilename is %s\n", dbFilename);
+	sprintf(slogpath,"./zigbee.log");		
+    printf("the dbFilename is %s, The slogpath is %s\n", dbFilename,slogpath);
 	APDatabaseInit(dbFilename);
 	
-//	InsertDatatoDatabase(dbFilename,NULL);
 
-	UpdateDatatoDatabase(dbFilename,&test_device);
+	//UpdateDatatoDatabase(dbFilename,&test_device);
 	
+	/*初始化 socket*/
 //	socketClientInit(str, socketClientCb);
 	
-    getClientLocalPort(&localport, &mac);
+//    getClientLocalPort(&localport, &mac);
 	
-	printf("**** The MAC addr : %s, the port : %d ******\n",mac,localport);
+	// printf("**** The MAC addr : %s, the port : %d ******\n",mac,localport);
 	
-	AP_Protocol_init(sendDatatoServer);
+	// AP_Protocol_init(sendDatatoServer);
 	
-	printf("-------sendAPinfotoServer---------------\n");
-	sendAPinfotoServer(mac,localport);
+	// printf("-------sendAPinfotoServer---------------\n");
+	// sendAPinfotoServer(mac,localport);
 	
-	
+	zbSocOpenNwk(20);
 	while(1) {
 		struct pollfd zbfds[1];
 		int pollRet;
@@ -194,35 +192,37 @@ int main(int argc, char *argv[])
 		
 		zbfds[0].fd  = zbSoc_fd;    /* 将Zigbee串口的描述符赋给 poll zbfds数组 */
 		zbfds[0].events = POLLIN; 
-		poll(zbfds,1,1);           /* 阻塞等待串口接收数据 */
-		
+		poll(zbfds,1,-1);           /* 阻塞等待串口接收数据 */
+		//zbSocOpenNwk(20);
 		if (zbfds[0].revents) {
 			printf("Message from ZLL SoC\n");
 			//zbSocProcessRpc();
+			myzbSocProcessRpc();
+		//	zbSocOpenNwk(20);
 		}
 		
-		if (ENABLEZIGBEE == 1) {
+		if (ENABLEZIGBEE == 1) { /* 允许设备入网 */
 			ENABLEZIGBEE = 0;
 			sendDevDataOncetoServer();
 		}
 		// sendDevDataOncetoServer();
 		// hello();
 		printf("> Please input the data number:\n>");
-	    scanf("%s",chartemp);
-		if(strcmp("2.1.1",chartemp) == 0) {
-			printf("\n Send device data to server\n");
-			sendDevDatatoServer();
-		} else if (strcmp("2.1.2",chartemp) == 0) {
-			printf("\n Send device info to server\n");
-			sendDevinfotoServer(mac, localport);
-		} else if (strcmp("start",chartemp) == 0){
-			while(1) {
-				sendDevDatatoServer();
-				sleep(5);
-			}
-		} else {
-			printf("\n Please input again! \n");
-		}
+	    //scanf("%s",chartemp);
+		// if(strcmp("2.1.1",chartemp) == 0) {
+			// printf("\n Send device data to server\n");
+			// sendDevDatatoServer();
+		// } else if (strcmp("2.1.2",chartemp) == 0) {
+			// printf("\n Send device info to server\n");
+			// sendDevinfotoServer(mac, localport);
+		// } else if (strcmp("start",chartemp) == 0){
+			// while(1) {
+				// sendDevDatatoServer();
+				// sleep(5);
+			// }
+		// } else {
+			// printf("\n Please input again! \n");
+		// }
 		
 		
 	}

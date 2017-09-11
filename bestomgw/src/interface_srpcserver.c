@@ -1054,7 +1054,7 @@ static uint8_t SRPC_permitJoin(uint8_t *pBuf, uint32_t clientFd)
 	if (magicNumber == JOIN_AUTH_NUM)
 	{
 		//Open the network for joining
-		zbSocOpenNwk(duration);
+	//	zbSocOpenNwk(duration);
 	}
 
 	return 0;
