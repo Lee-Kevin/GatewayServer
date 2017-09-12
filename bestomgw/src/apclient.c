@@ -33,6 +33,7 @@
 
 #include "ap_protocol.h"
 #include "cJSON.h"
+#include "database.h"
 #include "interface_protocol.h"
 
 
@@ -49,33 +50,11 @@
  char sdbpath[PATH_MAX]; //db 文件路径
  char sinipath[PATH_MAX]; //db 文件路径 
 
- sqlite3 *gdb=NULL;
+sqlite3 *gdb=NULL;
 
 extern uint8_t ENABLEZIGBEE;
  
-/* 管理Zigbee设备相关函数 */
-uint8_t tlIndicationCb(epInfo_t *epInfo);
-uint8_t newDevIndicationCb(epInfo_t *epInfo);
-uint8_t zclGetStateCb(uint8_t state, uint16_t nwkAddr, uint8_t endpoint);
-uint8_t zclGetLevelCb(uint8_t level, uint16_t nwkAddr, uint8_t endpoint);
-uint8_t zclGetHueCb(uint8_t hue, uint16_t nwkAddr, uint8_t endpoint);
-uint8_t zclGetSatCb(uint8_t sat, uint16_t nwkAddr, uint8_t endpoint);
-uint8_t zdoSimpleDescRspCb(epInfo_t *epInfo);
-uint8_t zdoLeaveIndCb(uint16_t nwkAddr);
 
-static zbSocCallbacks_t zbSocCbs =
-{ tlIndicationCb, // pfnTlIndicationCb - TouchLink Indication callback
-		newDevIndicationCb, // pfnNewDevIndicationCb - New Device Indication callback
-		zclGetStateCb, //pfnZclGetStateCb - ZCL response callback for get State
-		zclGetLevelCb, //pfnZclGetLevelCb_t - ZCL response callback for get Level
-		zclGetHueCb, // pfnZclGetHueCb - ZCL response callback for get Hue
-		zclGetSatCb, //pfnZclGetSatCb - ZCL response callback for get Sat
-		zdoSimpleDescRspCb, //pfnzdoSimpleDescRspCb - ZDO simple desc rsp
-		zdoLeaveIndCb, // pfnZdoLeaveIndCb - ZDO Leave indication
-		NULL,
-		NULL
-		};
-		
 void usage(char* exeName)
 {
 	printf("Usage: ./%s <port>\n", exeName);
@@ -84,6 +63,7 @@ void usage(char* exeName)
 
 void sendDatatoServer(char *str);
 void socketClientCb(msgData_t *msg);
+void zbSocfun(ZOCData_t *msg);
 
 
 int main(int argc, char *argv[])
@@ -104,8 +84,7 @@ int main(int argc, char *argv[])
 	test_device.note = note;
 	
 	printf("%s -- %s %s\n", argv[0], __DATE__, __TIME__);
-
-	// int i;	
+	
 	/* 
 	 * Client 默认连接的IP地址和端口可变
 	*/
@@ -142,7 +121,7 @@ int main(int argc, char *argv[])
 		//usage(argv[0]);
 		printf("attempting to use /dev/ttyS0\n");
 		
-		zbSoc_fd = zbSocOpen("/dev/ttyS0");
+		zbSoc_fd = init_serial("/dev/ttyS0",zbSocfun);
 		printf("Open zbSoc_fd : %d\n",zbSoc_fd);
 		//if (zbSoc_fd<0 )
 		//	{zbSoc_fd = zbSocOpen("/dev/null");}
@@ -150,7 +129,7 @@ int main(int argc, char *argv[])
 	}
 	else
 	{
-		zbSoc_fd = zbSocOpen(argv[argc-1]);
+		zbSoc_fd = init_serial(argv[argc-1],zbSocfun);
 		printf("Open zbSoc_fd : %d\n",zbSoc_fd);
 	}
 
@@ -186,20 +165,19 @@ int main(int argc, char *argv[])
 	
 	zbSocOpenNwk(20);
 	while(1) {
-		struct pollfd zbfds[1];
-		int pollRet;
+		// struct pollfd zbfds[1];
 		char chartemp[10];
 		
-		zbfds[0].fd  = zbSoc_fd;    /* 将Zigbee串口的描述符赋给 poll zbfds数组 */
-		zbfds[0].events = POLLIN; 
-		poll(zbfds,1,-1);           /* 阻塞等待串口接收数据 */
-		//zbSocOpenNwk(20);
-		if (zbfds[0].revents) {
-			printf("Message from ZLL SoC\n");
-			//zbSocProcessRpc();
-			myzbSocProcessRpc();
-		//	zbSocOpenNwk(20);
-		}
+		// zbfds[0].fd  = zbSoc_fd;    /* 将Zigbee串口的描述符赋给 poll zbfds数组 */
+		// zbfds[0].events = POLLIN; 
+		// poll(zbfds,1,-1);           /* 阻塞等待串口接收数据 */
+		// //zbSocOpenNwk(20);
+		// if (zbfds[0].revents) {
+			// printf("Message from ZLL SoC\n");
+			// //zbSocProcessRpc();
+			// myzbSocProcessRpc();
+		// //	zbSocOpenNwk(20);
+		// }
 		
 		if (ENABLEZIGBEE == 1) { /* 允许设备入网 */
 			ENABLEZIGBEE = 0;
@@ -208,21 +186,21 @@ int main(int argc, char *argv[])
 		// sendDevDataOncetoServer();
 		// hello();
 		printf("> Please input the data number:\n>");
-	    //scanf("%s",chartemp);
-		// if(strcmp("2.1.1",chartemp) == 0) {
-			// printf("\n Send device data to server\n");
-			// sendDevDatatoServer();
-		// } else if (strcmp("2.1.2",chartemp) == 0) {
-			// printf("\n Send device info to server\n");
-			// sendDevinfotoServer(mac, localport);
-		// } else if (strcmp("start",chartemp) == 0){
-			// while(1) {
-				// sendDevDatatoServer();
-				// sleep(5);
-			// }
-		// } else {
-			// printf("\n Please input again! \n");
-		// }
+	    scanf("%s",chartemp);
+		if(strcmp("2.1.1",chartemp) == 0) {
+			printf("\n Send device data to server\n");
+			sendDevDatatoServer();
+		} else if (strcmp("2.1.2",chartemp) == 0) {
+			printf("\n Send device info to server\n");
+			sendDevinfotoServer(mac, localport);
+		} else if (strcmp("start",chartemp) == 0){
+			while(1) {
+				sendDevDatatoServer();
+				sleep(5);
+			}
+		} else {
+			printf("\n Please input again! \n");
+		}
 		
 		
 	}
@@ -244,17 +222,23 @@ int main(int argc, char *argv[])
  */
 void socketClientCb(msgData_t *msg)
 {
-
-	
 	data_handle(msg->pData);
-	// printf("socketClientCb: cmdId:%x\n",(msg->cmdId));
-
-	// func = srpcProcessIncoming[(msg->cmdId)];
-	// if (func)
-	// {
-		// (*func)(msg->pData);
-	// }
 }
+
+/*********************************************************************
+ * @fn          zbSocfun
+ *
+ * @brief		客户端接收数据处理函数
+ *
+ * @param
+ *
+ * @return
+ */
+void zbSocfun(ZOCData_t *msg)
+{
+	DealwithSerialData(msg->pData);
+}
+
 
 /*********************************************************************
  * @fn          sendDatatoServer
@@ -272,126 +256,3 @@ void sendDatatoServer(char *str) {
 	
 	socketClientSendData(&msg);
 }
-
-/************************************************************************
- *
- * 以下为Zigbee相关的调用函数
- *
- *
- */
-
-uint8_t tlIndicationCb(epInfo_t *epInfo)
-{
-	epInfoExtended_t epInfoEx;
-
-	epInfoEx.epInfo = epInfo;
-	epInfoEx.type = EP_INFO_TYPE_NEW;
-
-	devListAddDevice(epInfo);
-	SRPC_SendEpInfo(&epInfoEx);
-
-	return 0;
-}
-
-uint8_t newDevIndicationCb(epInfo_t *epInfo)
-{
-	//Just add to device list to store
-	devListAddDevice(epInfo);
-
-	return 0;
-}
-
-uint8_t zdoSimpleDescRspCb(epInfo_t *epInfo)
-{
-	epInfo_t *ieeeEpInfo;
-	epInfo_t* oldRec;
-	epInfoExtended_t epInfoEx;
-
-	printf("zdoSimpleDescRspCb: NwkAddr:0x%04x\n End:0x%02x ", epInfo->nwkAddr,
-			epInfo->endpoint);
-
-	//find the IEEE address. Any ep (0xFF), if the is the first simpleDesc for this nwkAddr
-	//then devAnnce will enter a dummy entry with ep=0, other wise get IEEE from a previous EP
-	ieeeEpInfo = devListGetDeviceByNaEp(epInfo->nwkAddr, 0xFF);
-	memcpy(epInfo->IEEEAddr, ieeeEpInfo->IEEEAddr, Z_EXTADDR_LEN);
-
-	//remove dummy ep, the devAnnce will enter a dummy entry with ep=0,
-	//this is only used for storing the IEEE address until the  first real EP
-	//is enter.
-	devListRemoveDeviceByNaEp(epInfo->nwkAddr, 0x00);
-
-	//is this a new device or an update
-	oldRec = devListGetDeviceByIeeeEp(epInfo->IEEEAddr, epInfo->endpoint);
-
-	if (oldRec != NULL)
-	{
-		if (epInfo->nwkAddr != oldRec->nwkAddr)
-		{
-			epInfoEx.type = EP_INFO_TYPE_UPDATED;
-			epInfoEx.prevNwkAddr = oldRec->nwkAddr;
-			devListRemoveDeviceByNaEp(oldRec->nwkAddr, oldRec->endpoint); //theoretically, update the database record in place is possible, but this other approach is selected to provide change logging. Records that are marked as deleted soes not have to be phisically deleted (e.g. by avoiding consilidation) and thus the database can be used as connection log
-		}
-		else
-		{
-			//not checking if any of the records has changed. assuming that for a given device (ieee_addr+endpoint_number) nothing will change except the network address.
-			epInfoEx.type = EP_INFO_TYPE_EXISTING;
-		}
-	}
-	else
-	{
-		epInfoEx.type = EP_INFO_TYPE_NEW;
-	}
-
-	printf("zdoSimpleDescRspCb: NwkAddr:0x%04x Ep:0x%02x Type:0x%02x ", epInfo->nwkAddr,
-			epInfo->endpoint, epInfoEx.type);
-
-	if (epInfoEx.type != EP_INFO_TYPE_EXISTING)
-	{
-		devListAddDevice(epInfo);
-		epInfoEx.epInfo = epInfo;
-		SRPC_SendEpInfo(&epInfoEx);
-	}
-
-	return 0;
-}
-
-uint8_t zdoLeaveIndCb(uint16_t nwkAddr)
-{
-	epInfoExtended_t removeEpInfoEx;
-
-	removeEpInfoEx.epInfo = devListRemoveDeviceByNaEp(nwkAddr, 0xFF);
-
-	while(removeEpInfoEx.epInfo)
-	{
-		removeEpInfoEx.type = EP_INFO_TYPE_REMOVED;
-		SRPC_SendEpInfo(&removeEpInfoEx);
-		removeEpInfoEx.epInfo = devListRemoveDeviceByNaEp(nwkAddr, 0xFF);
-	}
-
-	return 0;
-}
-
-uint8_t zclGetStateCb(uint8_t state, uint16_t nwkAddr, uint8_t endpoint)
-{
-	SRPC_CallBack_getStateRsp(state, nwkAddr, endpoint, 0);
-	return 0;
-}
-
-uint8_t zclGetLevelCb(uint8_t level, uint16_t nwkAddr, uint8_t endpoint)
-{
-	SRPC_CallBack_getLevelRsp(level, nwkAddr, endpoint, 0);
-	return 0;
-}
-
-uint8_t zclGetHueCb(uint8_t hue, uint16_t nwkAddr, uint8_t endpoint)
-{
-	SRPC_CallBack_getHueRsp(hue, nwkAddr, endpoint, 0);
-	return 0;
-}
-
-uint8_t zclGetSatCb(uint8_t sat, uint16_t nwkAddr, uint8_t endpoint)
-{
-	SRPC_CallBack_getSatRsp(sat, nwkAddr, endpoint, 0);
-	return 0;
-}
-

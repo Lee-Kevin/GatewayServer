@@ -49,6 +49,13 @@ extern "C" {
 
 // 自定义数据包里的结构体
 
+#define ATTR_PACKED_SIZE 32
+struct zocATTR_PACKED {
+  uint8_t pData[ATTR_PACKED_SIZE];
+};
+typedef struct zocATTR_PACKED ZOCData_t;
+
+// 帧结构内容
 struct sFrame_packet {
     uint8_t 	head_1;
     uint8_t 	head_2;
@@ -73,6 +80,9 @@ union uFrame_packet {
 	sFrame_packet_t  frame;
 };
 typedef union uFrame_packet uSOC_packet_t;
+
+typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg ); 
+
 // ZLL Soc Types
 typedef enum
 {
@@ -151,10 +161,9 @@ void zbSocProcessRpc(void);
 /******************************************************************************************
  自定义添加
 ******************************************************************************************/
-uint8_t checkData(uint8_t *data, uint16_t len);
-uint8_t checkRead(uint8_t *data, uint16_t len);
-void myzbSocProcessRpc(void);
+
 void zbSocSendCommand(uSOC_packet_t *packet);
+
 //ZLL API's
 void zbSocTouchLink(void);
 void zbSocResetToFn(void);

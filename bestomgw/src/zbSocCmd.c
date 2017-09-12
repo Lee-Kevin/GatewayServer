@@ -51,9 +51,21 @@
 #include <errno.h>
 #include <string.h>
 
+#include <pthread.h>
+#include <poll.h>
+
 #include "zbSocCmd.h"
 
 #include "utils.h"
+
+
+#define __BIG_DEBUG__
+
+#ifdef __BIG_DEBUG__
+#define debug_printf(fmt, ...) printf( fmt, ##__VA_ARGS__)
+#else
+#define debug_printf(fmt, ...)
+#endif
 
 /*********************************************************************
  * MACROS
@@ -212,6 +224,23 @@ typedef enum {
 /*********************************************************************
  * GLOBAL VARIABLES
  */
+ 
+/********************************************************************
+ * 添加自定义内容
+ */
+// 定义链表，存储串口过来的信息
+struct LinkedMsg
+{
+	ZOCData_t message;
+	void *nextMessage;
+};
+
+typedef struct LinkedMsg ZOClinkedMsg_t;
+
+ZOClinkedMsg_t *ZoCrxBuf;
+// Client data processing buffer
+/* 存放串口等待处理的数据 */
+ZOClinkedMsg_t *ZoCrxProcBuf;
 
 /*********************************************************************
  * LOCAL VARIABLES
@@ -219,7 +248,15 @@ typedef enum {
 int serialPortFd = 0;
 uint8_t transSeqNumber = 0;
 
+static int messageCount = 0;
+
+ZOCRecvProcess_t zbSocProcess;
+
+
+
 zbSocCallbacks_t zbSocCb;
+
+
 
 /*********************************************************************
  * LOCAL FUNCTIONS
@@ -232,6 +269,20 @@ static void processRpcSysAppZclFoundation(uint8_t *zclRspBuff,
 static void processRpcSysApp(uint8_t *rpcBuff);
 static void processRpcSysDbg(uint8_t *rpcBuff);
 static void zbSocTransportWrite(uint8_t* buf, uint8_t len);
+
+/******************自行添加的函数********************************/
+static uint8_t checkData(uint8_t *data, uint16_t len);
+static uint8_t checkRead(uint8_t *data, uint16_t len);
+
+static pthread_t ZOCRTISThreadId;
+static void *ZOCrxThreadFunc (void *ptr);
+static void *ZOChandleThreadFunc (void *ptr);
+
+// Mutex to handle rx 互斥锁， pthread_mutex_t 是一个结构体，PTHREAD_MUTEX_INITIALIZER   结构常量
+pthread_mutex_t ZOCRxMutex = PTHREAD_MUTEX_INITIALIZER;
+
+// conditional variable to notify that the AREQ is handled
+static pthread_cond_t ZOCRxCond;
 
 /*********************************************************************
  * @fn      calcFcs
@@ -328,11 +379,194 @@ tio.c_cflag = B115200 | CRTSCTS | CS8 | CLOCAL | CREAD;
 	return serialPortFd;
 }
 
+/*********************************************************************
+ * @fn      init_serial
+ *
+ * @brief   init the serial port to the CC253x. and create 2 thread for communication
+ *
+ * @param   devicePath - path to the UART device
+ *
+ * @return  status
+ */
 
-int32_t init_serial(char *devicePath)
+int32_t init_serial(char *devicePath, ZOCRecvProcess_t fun)
 {
+	serialPortFd = zbSocOpen(devicePath);  
+	if(serialPortFd == -1) {
+		return -1;
+	}
+	zbSocProcess = fun;
+	
+	//printf("\n---------------Going to Create Thread rxThreadFunc------------------------\n");
 
+	if (pthread_create(&ZOCRTISThreadId, NULL, ZOCrxThreadFunc, NULL))
+	{
+		// thread creation failed
+		printf("Failed to create RTIS LNX IPC Client read thread\n");
+		return -1;
+	}
+
+	/**********************************************************************
+	 * Create thread which can handle new messages from the NPI server
+	 **********************************************************************/
+
+	//printf("\n---------------Going to Create Thread handleThreadFunc----------------------\n");
+	
+	if (pthread_create(&ZOCRTISThreadId, NULL, ZOChandleThreadFunc, NULL))
+	{
+		// thread creation failed
+		printf("Failed to create RTIS LNX IPC Client handle thread\n");
+		return -1;
+	}
+
+	
+	return serialPortFd;
 }		 
+
+static void *ZOCrxThreadFunc (void *ptr) {
+	struct pollfd zbfds[1];
+	int done = 0;
+	zbfds[0].fd  = serialPortFd;    /* 将Zigbee串口的描述符赋给 poll zbfds数组 */
+	zbfds[0].events = POLLIN; 
+	debug_printf("\n[DBG] Go in ZOCrxThreadFunc\n");
+	do {
+		poll(zbfds,1,-1);           /* 阻塞等待串口接收数据 */
+		//zbSocOpenNwk(20);
+		if (zbfds[0].revents) {
+			
+			unsigned char buffer[1024*2] = {0};//数据缓冲区
+			unsigned char read_buf[1024], data[256];
+			int i = 0, head = 0;
+			int nready, nread;
+			static int dlen = 0, tail = 0;
+			
+			memset(read_buf, 0, sizeof(read_buf));
+
+			nread = read(serialPortFd, read_buf, sizeof(read_buf));
+			if (nread > 0 && nread < (sizeof(buffer) - tail)) {
+				memcpy(&buffer[head], read_buf, nread);
+				
+				if(dlen == 0) {  						  /* 对于第一包数据，需要找到帧头 */
+					i = 0;
+					while(i < nread && buffer[i] != 0x55 && buffer[i+1] != 0x3A) i++;  // 找到帧头
+					if (buffer[i] == 0x55 && buffer[i+1] == 0x3A) {
+						memset(data, 0, sizeof(data));
+						dlen = buffer[i+2];       		  /* 串口数据里的第三个字节代表 帧长度 */
+						tail += (nread-i);                /* 尾部为实际数据的尾部 */
+						memcpy(data, &buffer[i], tail);  
+						//printf("[DBG], the data len is %d, the index is %d, the tail is %d\n",dlen, i, tail);
+					}			
+				} else {                                  /* 非第一包数据 */
+					memcpy(&data[tail], &buffer[i], nread);  
+					tail += nread;
+					// printf("[DBG] **the tail is %d\n",tail);
+					if(tail >= dlen) { 
+						if( checkRead(data, dlen) ) {
+							debug_printf("[DBG] Pass the checkRead \n");
+							ZOClinkedMsg_t *newMessage = (ZOClinkedMsg_t *) malloc(sizeof(ZOClinkedMsg_t));
+							if(newMessage == NULL) {
+								done = 1;
+								printf("[ERR] Could not allocate memory for ZOC message\n");
+								break;
+							} else {
+								messageCount++;
+								memset(newMessage,0,sizeof(ZOClinkedMsg_t));
+								memcpy(&(newMessage->message), data, dlen);
+							}
+							
+							debug_printf("[DBG] The data recived is:\n");
+							for (int j=0; j<dlen; j++) {
+								debug_printf("%2x-",data[j]);
+							}
+							debug_printf("\n");
+							
+							// 把读取出来的数据帧，放入链表中
+							if(ZoCrxBuf == NULL) {
+								ZoCrxBuf = newMessage;
+							} else {
+								ZOClinkedMsg_t *searchList = ZoCrxBuf;
+								while (searchList->nextMessage != NULL) {
+									searchList = searchList->nextMessage;
+								}
+								searchList->nextMessage = newMessage;
+							}
+						} else {
+							printf("Don't pass the checkRead \n");
+						}
+						dlen = 0;
+						tail = 0;
+					}
+				}
+			}	
+		}
+		
+		if (ZoCrxBuf != NULL) {
+		    pthread_mutex_lock(&ZOCRxMutex);
+			// 把接收链表中的数据，传送给等待处理的链表
+		    ZoCrxProcBuf = ZoCrxBuf;			
+				// Clear receiving buffer for new messages
+		    ZoCrxBuf = NULL;
+			debug_printf("[DBG] Copied message list (processed %d messages)...\n",
+						messageCount);
+				
+			debug_printf("[MUTEX] Unlock Mutex (Read)\n");
+				// Then unlock the thread so the handle can handle the AREQ
+			pthread_mutex_unlock(&ZOCRxMutex);
+				
+			debug_printf("[MUTEX] Signal message read (Read)...\n");
+			
+			/*
+			* 发送信号给另外一个正在处于阻塞等待状态的线程handle thread. 使其脱离阻塞状态，继续执行。
+			* Signal to the handle thread an AREQ message is ready
+			*/
+			pthread_cond_signal(&ZOCRxCond);
+			printf("\n-----I have already send the signal ZOCRxCond ---\n");
+			debug_printf("[MUTEX] Signal message read (Read)... sent\n");
+		}
+		
+	} while(!done);
+
+	printf("\n[ERR] Exit ZOCrxThreadFunc\n");
+	return ptr;
+}
+
+static void *ZOChandleThreadFunc (void *ptr) {
+	uint8_t done = 0, tryLockFirstTimeOnly = 0;
+	printf("\n[DBG] This is ZOChandleThreadFunc \n");
+	
+	do {
+		if(tryLockFirstTimeOnly == 0) {
+			debug_printf("[MUTEX] Lock ZOC Mutex (Handle)\n");
+			pthread_mutex_lock(&ZOCRxMutex);
+
+			debug_printf("\n[MUTEX] AREQ Lock (Handle)\n");
+			tryLockFirstTimeOnly = 1; 	
+		}
+		debug_printf("[MUTEX] Wait for ZOC Rx Cond (Handle) signal...\n");
+		pthread_cond_wait(&ZOCRxCond, &ZOCRxMutex);
+		debug_printf("[MUTEX] ZOC (Handle) has unlock\n");
+		
+		ZOClinkedMsg_t *searchList = ZoCrxProcBuf, *clearList;
+		while(searchList != NULL) {
+			debug_printf("[DBG] The data need to handle is:\n");
+			for (int j=0; j<searchList->message.pData[2]; j++) {
+				debug_printf("%2x-",searchList->message.pData[j]);
+			}
+			if(zbSocProcess != NULL) {
+				zbSocProcess((ZOClinkedMsg_t *)&(searchList->message));
+			}
+			// 用完一部分空间，便释放一部分空间
+			clearList = searchList;
+			searchList = searchList->nextMessage;
+			messageCount--;
+			memset(clearList,0,sizeof(ZOClinkedMsg_t));
+			free(clearList);
+		}
+	} while(!done);
+	
+	return ptr;
+}
+
 
 
 void zbSocClose(void)
@@ -359,7 +593,6 @@ static void zbSocTransportWrite(uint8_t* buf, uint8_t len)
 	write (serialPortFd, buf, len);
 	//prt_debug("[DBG] serial write ",buf, len);
 	tcflush(serialPortFd, TCOFLUSH);
-
 	return;
 }
 
@@ -390,17 +623,7 @@ void zbSocRegisterCallbacks(zbSocCallbacks_t zbSocCallbacks)
  */
 void zbSocTouchLink(void)
 {
-	uint8_t cmd[] =
-	{ APPCMDHEADER(13) 0x06, //Data Len
-			0x02, //Address Mode
-			0x00,//2dummy bytes
-			0x00, ZLL_MT_APP_RPC_CMD_TOUCHLINK, 0x00, //
-			0x00, //
-			0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -414,17 +637,6 @@ void zbSocTouchLink(void)
  */
 void zbSocBridgeStartNwk(void)
 {
-	uint8_t cmd[] =
-	{ APPCMDHEADER(13) 0x06, //Data Len
-			0x02, //Address Mode
-			0x00,//2dummy bytes
-			0x00, ZLL_MT_APP_RPC_CMD_START_DISTRIB_NWK, 0x00, //
-			0x00, //
-			0x00 //FCS - fill in later
-			};
-
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -438,17 +650,7 @@ void zbSocBridgeStartNwk(void)
  */
 void zbSocResetToFn(void)
 {
-	uint8_t cmd[] =
-	{ APPCMDHEADER(13) 0x06, //Data Len
-			0x02, //Address Mode
-			0x00,//2dummy bytes
-			0x00, ZLL_MT_APP_RPC_CMD_RESET_TO_FN, 0x00, //
-			0x00, //
-			0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -462,17 +664,7 @@ void zbSocResetToFn(void)
  */
 void zbSocSendResetToFn(void)
 {
-	uint8_t cmd[] =
-	{ APPCMDHEADER(13) 0x06, //Data Len
-			0x02, //Address Mode
-			0x00,//2dummy bytes
-			0x00, ZLL_MT_APP_RPC_CMD_SEND_RESET_TO_FN, 0x00, //
-			0x00, //
-			0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -485,21 +677,6 @@ void zbSocSendResetToFn(void)
  * @return  none
  */
 void zbSocOpenNwk(uint8_t duration) {
-	
-	// uint8_t mgmtPermit[] =
-	// {0x55, 0x3A,\
-	// 0x20, transSeqNumber++, 
-	// 0x01, 0x00, 
-	// 0x02, 
-	// 0x01, 
-	// 0xFD, 0x02,
-	// 0xFF,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00, 
-	// 0x3B,
-	// 0x00, 0x00, 
-	// 0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
-	// 0xEC
-	// };
-	
 	uSOC_packet_t openNetWork;
 	
 	openNetWork.frame.payload_len = 0x01;
@@ -509,11 +686,7 @@ void zbSocOpenNwk(uint8_t duration) {
 	openNetWork.frame.payload[0] = 0xFF;
 	memset(openNetWork.frame.shortAddr,0,sizeof(openNetWork.frame.shortAddr));
 	memset(openNetWork.frame.longAddr,0,sizeof(openNetWork.frame.longAddr));
-	
 	zbSocSendCommand(&openNetWork);
-	// //calcFcs(mgmtPermit, sizeof(mgmtPermit));
-	// zbSocTransportWrite(mgmtPermit, sizeof(mgmtPermit));
-	// //zbSocTransportWrite("123456789", strlen("123456789"));
 }
 
 /*********************************************************************
@@ -531,27 +704,7 @@ void zbSocOpenNwk(uint8_t duration) {
 void zbSocSendIdentify(uint16_t identifyTime, uint16_t dstAddr,
 		uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE,
-			13, //RPC payload Len
-			0x29, //MT_RPC_CMD_AREQ + MT_RPC_SYS_APP
-			0x00, //MT_APP_MSG
-			0x0B, //Application Endpoint
-			(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8,
-			endpoint, //Dst EP
-			(ZCL_CLUSTER_ID_GEN_IDENTIFY & 0x00ff),
-			(ZCL_CLUSTER_ID_GEN_IDENTIFY & 0xff00) >> 8, 0x06, //Data Len
-			addrMode, 0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, COMMAND_IDENTIFY, (identifyTime
-					& 0xff), (identifyTime & 0xff00) >> 8, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-
-	zbSocTransportWrite(cmd, sizeof(cmd));
-
-	printf("zbSocSendIdentify: dstAddr=%x, endpoint=%x, addrMode=%x, identifyTime=%x\n",
-			dstAddr, endpoint, addrMode, identifyTime);
 }
 
 /*********************************************************************
@@ -569,27 +722,7 @@ void zbSocSendIdentify(uint16_t identifyTime, uint16_t dstAddr,
 void zbSocSendIdentifyEffect(uint8_t effect, uint8_t effectVarient, uint16_t dstAddr,
 		uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE,
-			13, //RPC payload Len
-			0x29, //MT_RPC_CMD_AREQ + MT_RPC_SYS_APP
-			0x00, //MT_APP_MSG
-			0x0B, //Application Endpoint
-			(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8,
-			endpoint, //Dst EP
-			(ZCL_CLUSTER_ID_GEN_IDENTIFY & 0x00ff),
-			(ZCL_CLUSTER_ID_GEN_IDENTIFY & 0xff00) >> 8, 0x06, //Data Len
-			addrMode, 0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, COMMAND_IDENTIFY_TRIGGER_EFFECT, effect,
-			effectVarient, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-
-	zbSocTransportWrite(cmd, sizeof(cmd));
-
-	printf("zbSocSendIdentify: dstAddr=%x, endpoint=%x, addrMode=%x, effect=%x\n",
-			dstAddr, endpoint, addrMode, effect);
 }
 
 /*********************************************************************
@@ -607,76 +740,6 @@ void zbSocSendIdentifyEffect(uint8_t effect, uint8_t effectVarient, uint16_t dst
 void zbSocSetState(uint8_t state, uint16_t dstAddr, uint8_t endpoint,
 		uint8_t addrMode)
 {
-#if 0
-	uint8_t cmd[] =
-	{ 0xFE, 11, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_GEN_ON_OFF & 0x00ff), (ZCL_CLUSTER_ID_GEN_ON_OFF & 0xff00)
-			>> 8, 0x04, //Data Len
-			addrMode, 0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, (state ? 1 : 0), 0x00 //FCS - fill in later
-			};
-#endif 
-
-/*
-			write_buf[0] = 0xFE;
-			write_buf[1] = 0x0B;
-			write_buf[2] = 0x05;
-			write_buf[3] = 0x01;
-			write_buf[4] = 0x02;			
-		
-			write_buf[5] = read_buf[12]; //shortaddr
-			write_buf[6] = read_buf[11];//shortaddr		
-	
-			write_buf[7] = read_buf[13];//point
-
-			write_buf[8] = 0x88;
-
-			write_buf[9] = read_buf[14];
-			//write_buf[10] = 0xFF;
-			write_buf[10]=Calcxor(write_buf,10);
-			
-			write(fdserwrite, write_buf, 11);		
-*/
-#if 1
-	uint8_t cmd[] =
-	{ 0xFE, 0x0B, /*RPC payload Len */
-	0x05, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x01, /*MT_APP_MSG  */
-	addrMode,
-	(dstAddr & 0xff00) >> 8, (dstAddr & 0x00ff), endpoint, /*Dst EP */
-		0x88,		//transSeqNumber++,	
-		(state ? 1 : 0),
-			  0x00 //FCS - fill in later
-			};
-			calcFcs(cmd, sizeof(cmd));
-			#endif 
-			#if 0
-			//fe-0b-05-01-02-c3-79-0b-88-00-ca
-		uint8_t	cmd[] =
-	{ 0xFE, 0x0B, /*RPC payload Len */
-	0x05, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x01, /*MT_APP_MSG  */
-	0x02,
-	0xc3,0x79,0x0b,
-		0x88,		//transSeqNumber++,	
-		0x00,
-			  0xcb //FCS - fill in later
-			};
-	#endif
-		printf(" serial send : ");	
-	int i;
-	for( i = 0; i < sizeof(cmd); i++)
-	{
-		printf("%02X ", cmd[i]);
-	}
-	printf("*\n");
-	zbSocTransportWrite(cmd, sizeof(cmd));
-			printf("-->%s,%d \n",__FUNCTION__,__LINE__);
-			
 }
 
 /*********************************************************************
@@ -694,27 +757,7 @@ void zbSocSetState(uint8_t state, uint16_t dstAddr, uint8_t endpoint,
 void zbSocSetLevel(uint8_t level, uint16_t time, uint16_t dstAddr,
 		uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE,
-			14, //RPC payload Len
-			0x29, //MT_RPC_CMD_AREQ + MT_RPC_SYS_APP
-			0x00, //MT_APP_MSG
-			0x0B, //Application Endpoint
-			(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8,
-			endpoint, //Dst EP
-			(ZCL_CLUSTER_ID_GEN_LEVEL_CONTROL & 0x00ff),
-			(ZCL_CLUSTER_ID_GEN_LEVEL_CONTROL & 0xff00) >> 8, 0x07, //Data Len
-			addrMode, 0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, COMMAND_LEVEL_MOVE_TO_LEVEL, (level & 0xff), (time
-					& 0xff), (time & 0xff00) >> 8, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-
-	zbSocTransportWrite(cmd, sizeof(cmd));
-
-	printf("zbSocSetLevel: dstAddr=%x, endpoint=%x, addrMode=%x, level=%x\n",
-			dstAddr, endpoint, addrMode, level);
 }
 
 /*********************************************************************
@@ -732,23 +775,7 @@ void zbSocSetLevel(uint8_t level, uint16_t time, uint16_t dstAddr,
 void zbSocSetHue(uint8_t hue, uint16_t time, uint16_t dstAddr, uint8_t endpoint,
 		uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE,
-			15, //RPC payload Len
-			0x29, //MT_RPC_CMD_AREQ + MT_RPC_SYS_APP
-			0x00, //MT_APP_MSG
-			0x0B, //Application Endpoint
-			(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8,
-			endpoint, //Dst EP
-			(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0x00ff),
-			(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0xff00) >> 8, 0x08, //Data Len
-			addrMode, 0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, COMMAND_LIGHTING_MOVE_TO_HUE, (hue & 0xff), 0x00, //Move with shortest distance
-			(time & 0xff), (time & 0xff00) >> 8, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -766,23 +793,7 @@ void zbSocSetHue(uint8_t hue, uint16_t time, uint16_t dstAddr, uint8_t endpoint,
 void zbSocSetSat(uint8_t sat, uint16_t time, uint16_t dstAddr, uint8_t endpoint,
 		uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE,
-			14, //RPC payload Len
-			0x29, //MT_RPC_CMD_AREQ + MT_RPC_SYS_APP
-			0x00, //MT_APP_MSG
-			0x0B, //Application Endpoint
-			(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8,
-			endpoint, //Dst EP
-			(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0x00ff),
-			(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0xff00) >> 8, 0x07, //Data Len
-			addrMode, 0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, COMMAND_LIGHTING_MOVE_TO_SATURATION, (sat & 0xff), (time
-					& 0xff), (time & 0xff00) >> 8, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -801,25 +812,7 @@ void zbSocSetSat(uint8_t sat, uint16_t time, uint16_t dstAddr, uint8_t endpoint,
 void zbSocSetHueSat(uint8_t hue, uint8_t sat, uint16_t time, uint16_t dstAddr,
 		uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE,
-			15, //RPC payload Len
-			0x29, //MT_RPC_CMD_AREQ + MT_RPC_SYS_APP
-			0x00, //MT_APP_MSG
-			0x0B, //Application Endpoint
-			(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8,
-			endpoint, //Dst EP
-			(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0x00ff),
-			(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0xff00) >> 8, 0x08, //Data Len
-			addrMode, 0x01, //ZCL Header Frame Control
-			transSeqNumber++, 0x06, //ZCL Header Frame Command (COMMAND_LEVEL_MOVE_TO_HUE_AND_SAT)
-			hue, //HUE - fill it in later
-			sat, //SAT - fill it in later
-			(time & 0xff), (time & 0xff00) >> 8, 0x00 //fcs
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -837,26 +830,7 @@ void zbSocSetHueSat(uint8_t hue, uint8_t sat, uint16_t time, uint16_t dstAddr,
 void zbSocAddGroup(uint16_t groupId, uint16_t dstAddr, uint8_t endpoint,
 		uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 14, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_GEN_GROUPS & 0x00ff), (ZCL_CLUSTER_ID_GEN_GROUPS & 0xff00)
-			>> 8,
-			0x07, //Data Len
-			addrMode,
-			0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, COMMAND_GROUP_ADD, (groupId & 0x00ff),
-			(groupId & 0xff00) >> 8, 0, //Null group name - Group Name not pushed to the devices
-			0x00 //FCS - fill in later
-			};
 
-	printf("zbSocAddGroup: dstAddr 0x%x\n", dstAddr);
-
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -875,21 +849,7 @@ void zbSocAddGroup(uint16_t groupId, uint16_t dstAddr, uint8_t endpoint,
 void zbSocStoreScene(uint16_t groupId, uint8_t sceneId, uint16_t dstAddr,
 		uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 14, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_GEN_SCENES & 0x00ff), (ZCL_CLUSTER_ID_GEN_SCENES & 0xff00)
-			>> 8, 0x07, //Data Len
-			addrMode, 0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, COMMAND_SCENE_STORE, (groupId & 0x00ff), (groupId
-					& 0xff00) >> 8, sceneId++, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -908,21 +868,7 @@ void zbSocStoreScene(uint16_t groupId, uint8_t sceneId, uint16_t dstAddr,
 void zbSocRecallScene(uint16_t groupId, uint8_t sceneId, uint16_t dstAddr,
 		uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 14, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_GEN_SCENES & 0x00ff), (ZCL_CLUSTER_ID_GEN_SCENES & 0xff00)
-			>> 8, 0x07, //Data Len
-			addrMode, 0x01, //0x01 ZCL frame control field.  (send to the light cluster only)
-			transSeqNumber++, COMMAND_SCENE_RECALL, (groupId & 0x00ff), (groupId
-					& 0xff00) >> 8, sceneId++, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -937,57 +883,12 @@ void zbSocRecallScene(uint16_t groupId, uint8_t sceneId, uint16_t dstAddr,
 void zbSocBind(uint16_t srcNwkAddr, uint8_t srcEndpoint, uint8_t srcIEEE[8],
 		uint8_t dstEndpoint, uint8_t dstIEEE[8], uint16_t clusterID)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 23, /*RPC payload Len */
-	MT_RPC_CMD_SREQ | MT_RPC_SYS_ZDO,
-	0x21, /*MT_ZDO_BIND_REQ*/
-	(srcNwkAddr & 0x00ff), /*Src Nwk Addr - To send the bind message to*/
-	(srcNwkAddr & 0xff00) >> 8, /*Src Nwk Addr - To send the bind message to*/
-	srcIEEE[0], /*Src IEEE Addr for the binding*/
-	srcIEEE[1], /*Src IEEE Addr for the binding*/
-	srcIEEE[2], /*Src IEEE Addr for the binding*/
-	srcIEEE[3], /*Src IEEE Addr for the binding*/
-	srcIEEE[4], /*Src IEEE Addr for the binding*/
-	srcIEEE[5], /*Src IEEE Addr for the binding*/
-	srcIEEE[6], /*Src IEEE Addr for the binding*/
-	srcIEEE[7], /*Src IEEE Addr for the binding*/
-	srcEndpoint, /*Src endpoint for the binding*/
-	(clusterID & 0x00ff), /*cluster ID to bind*/
-	(clusterID & 0xff00) >> 8, /*cluster ID to bind*/
-	afAddr64Bit, /*Addr mode of the dst to bind*/
-	dstIEEE[0], /*Dst IEEE Addr for the binding*/
-	dstIEEE[1], /*Dst IEEE Addr for the binding*/
-	dstIEEE[2], /*Dst IEEE Addr for the binding*/
-	dstIEEE[3], /*Dst IEEE Addr for the binding*/
-	dstIEEE[4], /*Dst IEEE Addr for the binding*/
-	dstIEEE[5], /*Dst IEEE Addr for the binding*/
-	dstIEEE[6], /*Dst IEEE Addr for the binding*/
-	dstIEEE[7], /*Dst IEEE Addr for the binding*/
-	dstEndpoint, /*Dst endpoint for the binding*/
-	0x00 //FCS - fill in later
-			};
-
-	/*printf("zbSocBind: srcNwkAddr=0x%x, srcEndpoint=0x%x, srcIEEE=0x%x:%x:%x:%x:%x:%x:%x:%x, dstEndpoint=0x%x, dstIEEE=0x%x:%x:%x:%x:%x:%x:%x:%x, clusterID:%x\n",
-	 srcNwkAddr, srcEndpoint, srcIEEE[0], srcIEEE[1], srcIEEE[2], srcIEEE[3], srcIEEE[4], srcIEEE[5], srcIEEE[6], srcIEEE[7],
-	 srcEndpoint, dstIEEE[0], dstIEEE[1], dstIEEE[2], dstIEEE[3], dstIEEE[4], dstIEEE[5], dstIEEE[6], dstIEEE[7], clusterID);*/
-
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
+	
 }
 
 void zbSocGetInfo(void)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 0, /*RPC payload Len */
-	MT_RPC_CMD_SREQ | MT_RPC_SYS_UTIL,
-	MT_UTIL_GET_DEVICE_INFO,
-	0x00 //FCS - fill in later
-	};
 
-	//printf("zbSocGetInfo++ \n");
-
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -1003,21 +904,7 @@ void zbSocGetInfo(void)
  */
 void zbSocGetState(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 13, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_GEN_ON_OFF & 0x00ff), (ZCL_CLUSTER_ID_GEN_ON_OFF & 0xff00)
-			>> 8, 0x06, //Data Len
-			addrMode, 0x00, //0x00 ZCL frame control field.  not specific to a cluster (i.e. a SCL founadation command)
-			transSeqNumber++, ZCL_CMD_READ, (ATTRID_ON_OFF & 0x00ff), (ATTRID_ON_OFF
-					& 0xff00) >> 8, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -1033,23 +920,7 @@ void zbSocGetState(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
  */
 void zbSocGetLevel(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 13, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_GEN_LEVEL_CONTROL & 0x00ff), (ZCL_CLUSTER_ID_GEN_LEVEL_CONTROL
-			& 0xff00) >> 8,
-			0x06, //Data Len
-			addrMode,
-			0x00, //0x00 ZCL frame control field.  not specific to a cluster (i.e. a SCL founadation command)
-			transSeqNumber++, ZCL_CMD_READ, (ATTRID_LEVEL_CURRENT_LEVEL & 0x00ff),
-			(ATTRID_LEVEL_CURRENT_LEVEL & 0xff00) >> 8, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -1065,24 +936,7 @@ void zbSocGetLevel(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
  */
 void zbSocGetHue(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 13, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0x00ff),
-			(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0xff00) >> 8,
-			0x06, //Data Len
-			addrMode,
-			0x00, //0x00 ZCL frame control field.  not specific to a cluster (i.e. a SCL founadation command)
-			transSeqNumber++, ZCL_CMD_READ, (ATTRID_LIGHTING_COLOR_CONTROL_CURRENT_HUE
-					& 0x00ff), (ATTRID_LIGHTING_COLOR_CONTROL_CURRENT_HUE & 0xff00) >> 8,
-			0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -1098,24 +952,7 @@ void zbSocGetHue(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
  */
 void zbSocGetSat(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 13, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0x00ff),
-			(ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL & 0xff00) >> 8,
-			0x06, //Data Len
-			addrMode,
-			0x00, //0x00 ZCL frame control field.  not specific to a cluster (i.e. a SCL founadation command)
-			transSeqNumber++, ZCL_CMD_READ,
-			(ATTRID_LIGHTING_COLOR_CONTROL_CURRENT_SATURATION & 0x00ff),
-			(ATTRID_LIGHTING_COLOR_CONTROL_CURRENT_SATURATION & 0xff00) >> 8, 0x00 //FCS - fill in later
-			};
 
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*********************************************************************
@@ -1131,27 +968,7 @@ void zbSocGetSat(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
  */
 void zbSocGetModel(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
 {
-	uint8_t cmd[] =
-	{ 0xFE, 13, /*RPC payload Len */
-	0x29, /*MT_RPC_CMD_AREQ + MT_RPC_SYS_APP */
-	0x00, /*MT_APP_MSG  */
-	0x0B, /*Application Endpoint */
-	(dstAddr & 0x00ff), (dstAddr & 0xff00) >> 8, endpoint, /*Dst EP */
-	(ZCL_CLUSTER_ID_GEN_BASIC & 0x00ff),
-			(ZCL_CLUSTER_ID_GEN_BASIC & 0xff00) >> 8,
-			0x06, //Data Len
-			addrMode,
-			0x00, //0x00 ZCL frame control field.  not specific to a cluster (i.e. a SCL foundation command)
-			transSeqNumber++, ZCL_CMD_READ,
-			(ATTRID_BASIC_MODEL_ID & 0x00ff),
-			(ATTRID_BASIC_MODEL_ID & 0xff00) >> 8,
-			0x00 //FCS - fill in later
-			};
 
-	//printf("zbSocGetModel: dstAddr:%x, endpoint:%x, addrMode:%x\n", dstAddr, endpoint, addrMode);
-
-	calcFcs(cmd, sizeof(cmd));
-	zbSocTransportWrite(cmd, sizeof(cmd));
 }
 
 /*************************************************************************************************
@@ -1165,22 +982,7 @@ void zbSocGetModel(uint16_t dstAddr, uint8_t endpoint, uint8_t addrMode)
  *************************************************************************************************/
 static void processRpcSysAppTlInd(uint8_t *TlIndBuff)
 {
-	epInfo_t epInfo;
-
-	epInfo.nwkAddr = BUILD_UINT16(TlIndBuff[0], TlIndBuff[1]);
-	TlIndBuff += 2;
-	epInfo.endpoint = *TlIndBuff++;
-	epInfo.profileID = BUILD_UINT16(TlIndBuff[0], TlIndBuff[1]);
-	TlIndBuff += 2;
-	epInfo.deviceID = BUILD_UINT16(TlIndBuff[0], TlIndBuff[1]);
-	TlIndBuff += 2;
-	epInfo.version = *TlIndBuff++;
-	epInfo.status = *TlIndBuff++;
-
-	if (zbSocCb.pfnTlIndicationCb)
-	{
-		zbSocCb.pfnTlIndicationCb(&epInfo);
-	}
+	
 }
 
 /*************************************************************************************************
@@ -1194,47 +996,7 @@ static void processRpcSysAppTlInd(uint8_t *TlIndBuff)
  *************************************************************************************************/
 static void processRpcSysAppZcl(uint8_t *zclRspBuff)
 {
-	uint8_t zclHdrLen = 3;
-	uint16_t nwkAddr, clusterID;
-	uint8_t endpoint, zclFrameLen, zclFrameFrameControl;
 
-	//printf("processRpcSysAppZcl++\n");
-
-	//This is a ZCL response
-
-	//Index past app EP
-	zclRspBuff++;
-	nwkAddr = BUILD_UINT16(zclRspBuff[0], zclRspBuff[1]);
-	zclRspBuff += 2;
-
-	endpoint = *zclRspBuff++;
-	clusterID = BUILD_UINT16(zclRspBuff[0], zclRspBuff[1]);
-	zclRspBuff += 2;
-
-	zclFrameLen = *zclRspBuff++;
-	zclFrameFrameControl = *zclRspBuff++;
-	//is it manufacturer specific
-	if (zclFrameFrameControl & (1 << 2))
-	{
-		//currently not supported shown for reference
-		uint16_t ManSpecCode;
-		//manu spec code
-		ManSpecCode = BUILD_UINT16(zclRspBuff[0], zclRspBuff[1]);
-		zclRspBuff += 2;
-		//Manufacturer specif commands have 2 extra byte in te header
-		zclHdrLen += 2;
-
-		//supress warning
-		(void)ManSpecCode;
-	}
-
-	//is this a foundation command
-	if ((zclFrameFrameControl & 0x3) == 0)
-	{
-		//printf("processRpcSysAppZcl: Foundation messagex\n");
-		processRpcSysAppZclFoundation(zclRspBuff, zclFrameLen, clusterID, nwkAddr,
-				endpoint);
-	}
 }
 
 /*************************************************************************************************
@@ -1249,85 +1011,7 @@ static void processRpcSysAppZcl(uint8_t *zclRspBuff)
 static void processRpcSysAppZclFoundation(uint8_t *zclRspBuff,
 		uint8_t zclFrameLen, uint16_t clusterID, uint16_t nwkAddr, uint8_t endpoint)
 {
-	uint8_t transSeqNum, commandID;
 
-	transSeqNum = *zclRspBuff++;
-	commandID = *zclRspBuff++;
-
-	if (commandID == ZCL_CMD_READ_RSP)
-	{
-		uint16_t attrID;
-		uint8_t status;
-		uint8_t dataType;
-
-		attrID = BUILD_UINT16(zclRspBuff[0], zclRspBuff[1]);
-		zclRspBuff += 2;
-		status = *zclRspBuff++;
-		//get data type;
-		dataType = *zclRspBuff++;
-
-		//printf("processRpcSysAppZclFoundation: clusterID:%x, attrID:%x, dataType=%x\n", clusterID, attrID, dataType);
-		if ((clusterID == ZCL_CLUSTER_ID_GEN_BASIC) && (attrID == ATTRID_BASIC_MODEL_ID)
-				&& (dataType == ZCL_DATATYPE_CHAR_STR))
-		{
-			if (zbSocCb.pfnZclGetModelCb)
-			{
-				zbSocCb.pfnZclGetModelCb(&zclRspBuff[0]);
-			}
-		}
-		else if ((clusterID == ZCL_CLUSTER_ID_GEN_ON_OFF) && (attrID == ATTRID_ON_OFF)
-				&& (dataType == ZCL_DATATYPE_BOOLEAN))
-		{
-			if (zbSocCb.pfnZclGetStateCb)
-			{
-				uint8_t state = zclRspBuff[0];
-				zbSocCb.pfnZclGetStateCb(state, nwkAddr, endpoint);
-			}
-		}
-		else if ((clusterID == ZCL_CLUSTER_ID_GEN_LEVEL_CONTROL)
-				&& (attrID == ATTRID_LEVEL_CURRENT_LEVEL)
-				&& (dataType == ZCL_DATATYPE_UINT8))
-		{
-			if (zbSocCb.pfnZclGetLevelCb)
-			{
-				uint8_t level = zclRspBuff[0];
-				zbSocCb.pfnZclGetLevelCb(level, nwkAddr, endpoint);
-			}
-		}
-		else if ((clusterID == ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL)
-				&& (attrID == ATTRID_LIGHTING_COLOR_CONTROL_CURRENT_HUE)
-				&& (dataType == ZCL_DATATYPE_UINT8))
-		{
-			if (zbSocCb.pfnZclGetHueCb)
-			{
-				uint8_t hue = zclRspBuff[0];
-				zbSocCb.pfnZclGetHueCb(hue, nwkAddr, endpoint);
-			}
-		}
-		else if ((clusterID == ZCL_CLUSTER_ID_LIGHTING_COLOR_CONTROL)
-				&& (attrID == ATTRID_LIGHTING_COLOR_CONTROL_CURRENT_SATURATION)
-				&& (dataType == ZCL_DATATYPE_UINT8))
-		{
-			if (zbSocCb.pfnZclGetSatCb)
-			{
-				uint8_t sat = zclRspBuff[0];
-				zbSocCb.pfnZclGetSatCb(sat, nwkAddr, endpoint);
-			}
-		}
-		else
-		{
-			//unsupported ZCL Read Rsp
-			printf("processRpcSysAppZclFoundation: Unsupported ZCL Rsp\n");
-		}
-	}
-	else
-	{
-		//unsupported ZCL Rsp
-		printf("processRpcSysAppZclFoundation: Unsupported ZCL Rsp");
-		;
-	}
-
-	return;
 }
 
 /*************************************************************************************************
@@ -1341,29 +1025,7 @@ static void processRpcSysAppZclFoundation(uint8_t *zclRspBuff,
  *************************************************************************************************/
 void processRpcSysZdoEndDeviceAnnceInd(uint8_t *EndDeviceAnnceIndBuff)
 {
-	epInfo_t epInfo =	{ 0 };
-	uint8_t i;
 
-	EndDeviceAnnceIndBuff += 2;
-	epInfo.nwkAddr =
-			BUILD_UINT16(EndDeviceAnnceIndBuff[0], EndDeviceAnnceIndBuff[1]);
-	EndDeviceAnnceIndBuff += 2;
-
-	printf("processRpcSysZdoEndDeviceAnnceInd nwkAddr: %x, IEEE Addr: ",
-			epInfo.nwkAddr);
-
-	for (i = 0; i < 8; i++)
-	{
-		epInfo.IEEEAddr[i] = *EndDeviceAnnceIndBuff++;
-		printf("%x", epInfo.IEEEAddr[i]);
-		if (i < 7) printf(":");
-	}
-	printf("\n");
-
-	if (zbSocCb.pfnNewDevIndicationCb)
-	{
-		zbSocCb.pfnNewDevIndicationCb(&epInfo);
-	}
 
 }
 
@@ -1378,17 +1040,7 @@ void processRpcSysZdoEndDeviceAnnceInd(uint8_t *EndDeviceAnnceIndBuff)
  *************************************************************************************************/
 void processRpcSysZdoActiveEPRsp(uint8_t *ActiveEPRspBuff)
 {
-	uint16_t nwkAddr;
-	uint8_t epCount;
 
-	nwkAddr = BUILD_UINT16(ActiveEPRspBuff[0], ActiveEPRspBuff[1]);
-	ActiveEPRspBuff += 2;
-	epCount = *ActiveEPRspBuff;
-
-	printf("processRpcSysZdoActiveEPRsp nwkAddr: %x, Num Ep's: %d\n", nwkAddr,
-			epCount);
-
-	//Can be used to check all Ep's have associated ZdoSimpleDesc.
 }
 
 /*************************************************************************************************
@@ -1402,118 +1054,16 @@ void processRpcSysZdoActiveEPRsp(uint8_t *ActiveEPRspBuff)
  *************************************************************************************************/
 void processRpcSysZdoSimpleDescRsp(uint8_t *SimpleDescRspBuff)
 {
-	epInfo_t epInfo;
-	uint8_t numInputClusters, numOutputClusters, clusterIdx;
-	uint16_t  *inClusters, *outClusters;
-
-	SimpleDescRspBuff += 2; //src address
-	epInfo.status = *SimpleDescRspBuff++; //status..offset 2
-	epInfo.nwkAddr = BUILD_UINT16(SimpleDescRspBuff[0], SimpleDescRspBuff[1]); //network address
-	SimpleDescRspBuff += 2; //increment
-	//printf("processRpcSysZdoSimpleDescRsp: Length:%x \n",SimpleDescRspBuff[0]  );
-	SimpleDescRspBuff += 1;
-	epInfo.endpoint = *SimpleDescRspBuff++; //end point
-	epInfo.profileID = BUILD_UINT16(SimpleDescRspBuff[0], SimpleDescRspBuff[1]); //profile id
-	SimpleDescRspBuff += 2;
-	epInfo.deviceID = BUILD_UINT16(SimpleDescRspBuff[0], SimpleDescRspBuff[1]); //device id
-	SimpleDescRspBuff += 2;
-	epInfo.version = *SimpleDescRspBuff++;
-	// epInfo.status = *TlIndBuff++;
-	epInfo.deviceName = NULL;
-
-	printf("processRpcSysZdoSimpleDescRsp: nwkAddr:%x endpoint:%x\n",  epInfo.nwkAddr, epInfo.endpoint);
-
-	numInputClusters = *SimpleDescRspBuff++;
-	inClusters = (uint16_t*) malloc(2*numInputClusters);
-	if(inClusters)
-	{
-		printf("processRpcSysZdoSimpleDescRsp: inClusters[%d]:\n",  numInputClusters);
-		for(clusterIdx = 0; clusterIdx < numInputClusters; clusterIdx++)
-		{
-			inClusters[clusterIdx] = BUILD_UINT16(SimpleDescRspBuff[0], SimpleDescRspBuff[1]); //profile id
-			SimpleDescRspBuff += 2;
-			printf("0x%x ", inClusters[clusterIdx]);
-		}
-	}
-	printf("\n");
-
-	numOutputClusters = *SimpleDescRspBuff++;
-	outClusters = (uint16_t*) malloc(2*numOutputClusters);
-	if(outClusters)
-	{
-		printf("processRpcSysZdoSimpleDescRsp: outClusters[%d]:\n",  numOutputClusters);
-		for(clusterIdx = 0; clusterIdx < numOutputClusters; clusterIdx++)
-		{
-			outClusters[clusterIdx] = BUILD_UINT16(SimpleDescRspBuff[0], SimpleDescRspBuff[1]); //profile id
-			SimpleDescRspBuff += 2;
-			printf("0x%x ", outClusters[clusterIdx]);
-		}
-	}
-	printf("\n");
-
-	//if this is the TL endpoint then ignore it
-	if( !((numInputClusters == 1) && (numOutputClusters == 1) && (epInfo.profileID) == (0xC05E)) )
-	{
-		if (zbSocCb.pfnZdoSimpleDescRspCb)
-		{
-			zbSocCb.pfnZdoSimpleDescRspCb(&epInfo);
-		}
-	}
-
-	if(inClusters)
-	{
-		free(inClusters);
-	}
-	if(outClusters)
-	{
-		free(outClusters);
-	}
 }
 
 void processRpcSysZdoLeaveInd(uint8_t *LeaveIndRspBuff)
 {
-	uint16_t nwkAddr;
 
-	nwkAddr = BUILD_UINT16(LeaveIndRspBuff[0], LeaveIndRspBuff[1]);
-	LeaveIndRspBuff += 2;
-
-	printf("processRpcSysZdoLeaveInd nwkAddr: %x\n", nwkAddr);
-
-	if (zbSocCb.pfnZdoLeaveIndCb)
-	{
-		zbSocCb.pfnZdoLeaveIndCb(nwkAddr);
-	}
 }
 
 void processRpcUtilGetDevInfoRsp(uint8_t *GetDevInfoRsp)
 {
-	uint8_t ieeeAddr[8], ieeeIdx, devType, devState, status;
-	uint16_t nwkAddr;
 
-	status = *GetDevInfoRsp++;
-
-	if(status == 0)
-	{
-		for(ieeeIdx = 0; ieeeIdx < 8; ieeeIdx++)
-		{
-			ieeeAddr[ieeeIdx] = *GetDevInfoRsp++;
-		}
-
-		nwkAddr = BUILD_UINT16(GetDevInfoRsp[0], GetDevInfoRsp[1]);
-		GetDevInfoRsp += 2;
-
-		devType = *GetDevInfoRsp++;
-
-		devState = *GetDevInfoRsp++;
-
-		//printf("processRpcUtilGetDevInfoRsp: status:%x devState:%x, nwkAddr:%x ieeeIdx:%x:%x:%x:%x:%x:%x:%x:%x\n", status, devState, nwkAddr,
-		//		ieeeAddr[7], ieeeAddr[6], ieeeAddr[5], ieeeAddr[4], ieeeAddr[3], ieeeAddr[2], ieeeAddr[1], ieeeAddr[0]);
-	}
-
-	if (zbSocCb.pfnUtilGetDevInfoRsp)
-	{
-		zbSocCb.pfnUtilGetDevInfoRsp(status, nwkAddr, ieeeAddr, devType, devState);
-	}
 }
 
 /*************************************************************************************************
@@ -1527,32 +1077,7 @@ void processRpcUtilGetDevInfoRsp(uint8_t *GetDevInfoRsp)
  *************************************************************************************************/
 static void processRpcSysApp(uint8_t *rpcBuff)
 {
-	if (rpcBuff[1] == MT_APP_ZLL_TL_IND)
-	{
-		processRpcSysAppTlInd(&rpcBuff[2]);
-	}
 
-	else if (rpcBuff[1] == MT_APP_RSP)
-	{
-		processRpcSysAppZcl(&rpcBuff[2]);
-	}
-	else if (rpcBuff[1] == 0)
-	{
-		if (rpcBuff[2] == 0)
-		{
-			//printf("processRpcSysApp: Command Received Successfully\n\n");
-		}
-		else
-		{
-			printf("processRpcSysApp: Command Error\n\n");
-		}
-	}
-	else
-	{
-		printf("processRpcSysApp: Unsupported MT App Msg\n");
-	}
-
-	return;
 }
 
 /*************************************************************************************************
@@ -1566,28 +1091,6 @@ static void processRpcSysApp(uint8_t *rpcBuff)
  *************************************************************************************************/
 void processRpcSysZdo(uint8_t *rpcBuff)
 {
-	if (rpcBuff[1] == MT_ZDO_END_DEVICE_ANNCE_IND)
-	{
-		processRpcSysZdoEndDeviceAnnceInd(&rpcBuff[2]);
-	}
-	else if (rpcBuff[1] == MT_ZDO_ACTIVE_EP_RSP)
-	{
-		processRpcSysZdoActiveEPRsp(&rpcBuff[2]);
-	}
-	else if (rpcBuff[1] == MT_ZDO_SIMPLE_DESC_RSP)
-	{
-		processRpcSysZdoSimpleDescRsp(&rpcBuff[2]);
-	}
-	else if (rpcBuff[1] == MT_ZDO_LEAVE_IND)
-	{
-		processRpcSysZdoLeaveInd(&rpcBuff[2]);
-	}
-	else
-	{
-		//printf("processRpcSysZdo: Unsupported MT ZDO Msg\n");
-	}
-
-	return;
 
 }
 
@@ -1602,16 +1105,6 @@ void processRpcSysZdo(uint8_t *rpcBuff)
  *************************************************************************************************/
 void processRpcSysUtil(uint8_t *rpcBuff)
 {
-	if (rpcBuff[1] == MT_UTIL_GET_DEVICE_INFO)
-	{
-		processRpcUtilGetDevInfoRsp(&rpcBuff[2]);
-	}
-	else
-	{
-		printf("processRpcSysUtil: Unsupported MT UTIL Msg\n");
-	}
-
-	return;
 
 }
 
@@ -1625,27 +1118,7 @@ void processRpcSysUtil(uint8_t *rpcBuff)
  *************************************************************************************************/
 static void processRpcSysDbg(uint8_t *rpcBuff)
 {
-	if (rpcBuff[1] == MT_DEBUG_MSG)
-	{
-		//we got a debug string
-		printf("lcd_debug message from zll controller: %s\n",
-				(char*) &(rpcBuff[2]));
-	}
-	else if (rpcBuff[1] == 0)
-	{
-		if (rpcBuff[2] == 0)
-		{
-			//printf("processRpcSysDbg: Command Received Successfully\n\n");
-		}
-		else
-		{
-			printf("processRpcSysDbg: Command Error\n\n");
-		}
-	}
-	else
-	{
-		printf("processRpcSysDbg: Unsupported MT App Msg\n");
-	}
+
 }
 
 /*************************************************************************************************
@@ -1698,74 +1171,13 @@ void zbSocSendCommand(uSOC_packet_t *packet) {
     // __packet.frame.shortAddr  = 0x3B;
     // __packet.frame.longAddr   = 0x3B;
     __packet.frame.checkSum      = checkData(__packet.data, sizeof(__packet.data)-1);
-//	printf("[DBG] The packetData size is %d\n", sizeof(__packet.data));
+	//	printf("[DBG] The packetData size is %d\n", sizeof(__packet.data));
 	printf("[DBG] The packetData is :");
 	for (int i=0; i<sizeof(__packet.data); i++) {
 		printf("%2x-",__packet.data[i]);
 	}
 	
-	
 	zbSocTransportWrite(__packet.data, sizeof(__packet.data));
-}
-
-/*************************************************************************************************
- * @fn      myzbSocProcessRpc()
- *
- * @brief   read and process the data from the Zigbee controller
- *
- * @param   none
- *
- * @return  
- *************************************************************************************************/
-
-void myzbSocProcessRpc(void) {
-	//int serial_fd = *(int *)fd;
-	unsigned char buffer[1024*2] = {0};//数据缓冲区
-	unsigned char read_buf[1024], data[256];
-	int i = 0, head = 0;
-	int nready, nread;
-	static int dlen = 0, tail = 0;
-	
-	memset(read_buf, 0, sizeof(read_buf));
-
-	nread = read(serialPortFd, read_buf, sizeof(read_buf));
-	
-	// printf("------The data is:");
-	
-	for (int j=0; j<nread;j++) {
-		printf("%2x ",read_buf[j]);
-	}
-	
-	if (nread > 0 && nread < (sizeof(buffer) - tail)) {
-		memcpy(&buffer[head], read_buf, nread);
-		
-		if(dlen == 0) {  						  /* 对于第一包数据，需要找到帧头 */
-			i = 0;
-			while(i < nread && buffer[i] != 0x55 && buffer[i+1] != 0x3A) i++;  // 找到帧头
-			if (buffer[i] == 0x55 && buffer[i+1] == 0x3A) {
-				memset(data, 0, sizeof(data));
-				dlen = buffer[i+2];       		  /* 串口数据里的第三个字节代表 帧长度 */
-				tail += (nread-i);                /* 尾部为实际数据的尾部 */
-				memcpy(data, &buffer[i], tail);  
-				printf("[DBG], the data len is %d, the index is %d, the tail is %d\n",dlen, i, tail);
-			}			
-		} else {                                  /* 非第一包数据 */
-			memcpy(&data[tail], &buffer[i], nread);  
-			tail += nread;
-			printf("[DBG] **the tail is %d\n",tail);
-			if(tail >= dlen) {
-				if( checkRead(data, dlen) ) {
-					printf("pass the checkRead \n");
-					serial_recv_process(&data[6], dlen - 6); 
-				} else {
-					printf("Don't pass the checkRead \n");
-				}
-				dlen = 0;
-				tail = 0;
-			}
-		}
-	}	
-	return;
 }
 
 /*************************************************************************************************
