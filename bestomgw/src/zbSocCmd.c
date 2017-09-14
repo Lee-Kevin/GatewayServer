@@ -466,19 +466,13 @@ static void *ZOCrxThreadFunc (void *ptr) {
 							ZOClinkedMsg_t *newMessage = (ZOClinkedMsg_t *) malloc(sizeof(ZOClinkedMsg_t));
 							if(newMessage == NULL) {
 								done = 1;
-								printf("[ERR] Could not allocate memory for ZOC message\n");
+								debug_printf("[ERR] Could not allocate memory for ZOC message\n");
 								break;
 							} else {
 								messageCount++;
 								memset(newMessage,0,sizeof(ZOClinkedMsg_t));
 								memcpy(&(newMessage->message), data, dlen);
 							}
-							
-							debug_printf("[DBG] The data recived is:\n");
-							for (int j=0; j<dlen; j++) {
-								debug_printf("%2x-",data[j]);
-							}
-							debug_printf("\n");
 							
 							// 把读取出来的数据帧，放入链表中
 							if(ZoCrxBuf == NULL) {
@@ -548,12 +542,15 @@ static void *ZOChandleThreadFunc (void *ptr) {
 		
 		ZOClinkedMsg_t *searchList = ZoCrxProcBuf, *clearList;
 		while(searchList != NULL) {
-			debug_printf("[DBG] The data need to handle is:\n");
-			for (int j=0; j<searchList->message.pData[2]; j++) {
-				debug_printf("%2x-",searchList->message.pData[j]);
-			}
+			// debug_printf("[DBG] The data need to handle is:\n");
+			// for (int j=0; j<searchList->message.pData[2]; j++) {
+				// debug_printf("%2x-",searchList->message.pData[j]);
+			// }
 			if(zbSocProcess != NULL) {
 				zbSocProcess((ZOClinkedMsg_t *)&(searchList->message));
+			} else {
+				// done = 1;
+				// printf("[ERR] Please init the zbSocProcess fun");
 			}
 			// 用完一部分空间，便释放一部分空间
 			clearList = searchList;
@@ -563,7 +560,7 @@ static void *ZOChandleThreadFunc (void *ptr) {
 			free(clearList);
 		}
 	} while(!done);
-	
+	printf("\n[ERR] Exit ZOChandleThreadFunc\n");
 	return ptr;
 }
 

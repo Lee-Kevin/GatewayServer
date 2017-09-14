@@ -7,7 +7,7 @@ CFLAGS += -O2 -Wall -std=gnu99
 
 ##OBJS = bestomgw/src/utils.o bestomgw/src/sqlite3.o bestomgw/src/timertask.o bestomgw/src/gateway.o 
 
-OBJS = bestomgw/src/utils.o bestomgw/src/sqlite3.o bestomgw/src/interface_protocol.o \
+OBJS = bestomgw/src/utils.o bestomgw/src/sqlite3.o bestomgw/src/interface_protocol.o bestomgw/src/database.o \
 	bestomgw/src/zbSocCmd.o bestomgw/src/interface_devicelist.o bestomgw/src/interface_grouplist.o \
 	bestomgw/src/interface_scenelist.o bestomgw/src/interface_srpcserver.o bestomgw/src/socket_server.o\
 	bestomgw/src/socket_client.o bestomgw/src/SimpleDB.o bestomgw/src/SimpleDBTxt.o  bestomgw/src/cJSON.o\

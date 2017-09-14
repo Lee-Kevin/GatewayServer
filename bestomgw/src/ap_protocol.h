@@ -19,15 +19,6 @@ extern "C"
 */
 typedef void (*sendDatatoServer_t)( char *msg ); 
 
-void data_handle(char* data);
-
-int sendAPinfotoServer(char *mac, int port);
-
-void AP_Protocol_init(sendDatatoServer_t sendfunc);
-
-int sendDevinfotoServer(char *mac, int port);
-int sendDevDatatoServer();
-int sendDevDataOncetoServer();
 extern uint8_t ENABLEZIGBEE;
 /*api result*/
 enum protocol_result{
@@ -61,6 +52,45 @@ struct device_write {
     void *next;
 };
 typedef struct device_write devWriteData_t;
+
+/*
+{
+"sn":1,
+"version":"1.0",
+"netFlag":1,
+"cmdType":1,"pdu":
+{
+"pduType":0x1002,"devData":
+[
+{"devName":"s4","devId":"12345678",
+"param":[
+{"type":0x4006, "value":20},
+{"type":0x4007, "value": 80}
+]
+}
+
+]
+}
+}
+
+*/
+
+// 存储param对应的类型和值
+struct devparam {
+	uint16_t type;
+	int16_t  value;
+	void     *next;
+};
+typedef struct devparam devparam_t;
+
+// pdu 内容的定义
+struct pdu_content {
+	char* deviceName;
+	char* deviceID;
+	uint8_t paramNum;
+	devparam_t *param;
+};
+typedef struct pdu_content pdu_content_t;
 
 
 /*******************************************************************************
@@ -122,6 +152,24 @@ typedef struct device_write devWriteData_t;
 /*common response*/
 #define TYPE_COMMON_RSP							 0x8004
 
+/*Parameter type************************************************************/
+
+#define PARAM_TYPE_POWER_STATUS 			     0x4004
+#define PARAM_TYPE_ONINE_STATUS 			     0x4014
+
+#define PARAM_TYPE_S4_TEMP						 0x4006
+#define PARAM_TYPE_S4_HUMI						 0x4007
+
+
+void data_handle(char* data);
+
+int sendAPinfotoServer(char *mac, int port);
+
+void AP_Protocol_init(sendDatatoServer_t sendfunc);
+
+int sendDevinfotoServer(char *mac, int port);
+int sendDevDatatoServer(pdu_content_t *devicepdu);
+int sendDevDataOncetoServer();
 
 
 

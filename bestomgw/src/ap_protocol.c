@@ -468,18 +468,17 @@ int sendDevinfotoServer(char *mac, int port) {
 /*********************************************************************
  * @fn    sendDevDatatoServer
  *
- * @brief 发送子设备基本信息到Server
+ * @brief 发送子设备数据到Server
  *
  * @param mac, port
  *
  * @return
  */
 
-int sendDevDatatoServer() {
+ int sendDevDatatoServer(pdu_content_t *devicepdu) {
 
 	sFrame_head_t Frame_toSend;
-	
-	static uint8_t temp = 0;
+	pdu_content_t _content_toSend = *devicepdu;
 	
 	//printf(">This is sendAPinfotoServer\n");
     cJSON * pduJsonObject = NULL;
@@ -506,13 +505,6 @@ int sendDevDatatoServer() {
 	}
 	cJSON_AddItemToObject(pduJsonObject,"devData",devDataArrayObject);
 	
-	/*
-	* 用来测试
-	*/
-	if(temp++ == 50) {
-		
-		temp = 0;
-	}
 	
 	for (int j=0; j<1; j++) {
 		
@@ -521,8 +513,8 @@ int sendDevDatatoServer() {
 		/*
 		** 每一次循环，都往数组里面添加新的内容 
 		*/
-		cJSON_AddStringToObject(devDataArrayContent,"devName", "s4");
-		cJSON_AddStringToObject(devDataArrayContent,"devId", "12345678");
+		cJSON_AddStringToObject(devDataArrayContent,"devName", _content_toSend.deviceName);
+		cJSON_AddStringToObject(devDataArrayContent,"devId", _content_toSend.deviceID);
 	
 		cJSON * devParamJsonArray = cJSON_CreateArray();
 		if (NULL == devParamJsonArray) {
@@ -530,45 +522,141 @@ int sendDevDatatoServer() {
 			return PROTOCOL_FAILED;
 		}
 		cJSON_AddItemToObject(devDataArrayContent,"param",devParamJsonArray);
-		for(int i=0; i<4; i++) {
+		
+		//devparam_t *searchList = &_content_toSend.param, *clearList;
+		devparam_t *searchList = _content_toSend.param, *clearList;
+		
+		for(int i=0; i<_content_toSend.paramNum; i++) {
 			cJSON* arrayObject = cJSON_CreateObject();
+			
 			if(NULL == arrayObject) {
 				cJSON_Delete(arrayObject);
 				return PROTOCOL_FAILED;
 			}
-			if(i == 0) {
-				/* 温度 */
-				cJSON_AddNumberToObject(arrayObject,"type", 0x4006);
-				cJSON_AddNumberToObject(arrayObject,"value", temp);			
-			} else if( i==1 ){
-				/* 湿度 */
-				cJSON_AddNumberToObject(arrayObject,"type", 0x4007);
-				cJSON_AddNumberToObject(arrayObject,"value", 50+temp);		
-			} else if (i==2) {
-				/* 电量百分比 */
-				cJSON_AddNumberToObject(arrayObject,"type", 0x4004);
-				cJSON_AddNumberToObject(arrayObject,"value", 30+temp);		
-			} else if (i==3) {
-				/* 在线状态 */
-				cJSON_AddNumberToObject(arrayObject,"type", 0x4014);
-				cJSON_AddNumberToObject(arrayObject,"value", 1);	
-			}
+			cJSON_AddNumberToObject(arrayObject,"type", searchList->type);
+			cJSON_AddNumberToObject(arrayObject,"value",searchList->value);
+			clearList = searchList;
+			searchList = searchList->next;
+			memset(clearList, 0, sizeof(devparam_t));
+			debug_printf("\n[DBG] Before free\n");
+			
+			//free(clearList);
+			
 			cJSON_AddItemToArray(devParamJsonArray,arrayObject);
 		}
 		
 		cJSON_AddItemToArray(devDataArrayObject,devDataArrayContent);
 	}
-	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));	
+	//debug_printf("\n[DBG] After create jsonArray\n");
+	//debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));	
 	Frame_toSend.sn         = 1;
 	Frame_toSend.version    = 0;
 	Frame_toSend.netflag    = NET_TYPE_WAN;
 	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
 	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
 	
+	//debug_printf("\n[DBG] before Frame_packet_send \n");
 	Frame_packet_send(&Frame_toSend);
+	//debug_printf("\n[DBG] After Frame_packet_send \n");
 	cJSON_Delete(pduJsonObject);
+	//debug_printf("\n[DBG] After cJSON_Delete \n");
 	return PROTOCOL_OK;
 }
+ 
+// int sendDevDatatoServer() {
+
+	// sFrame_head_t Frame_toSend;
+	
+	// static uint8_t temp = 0;
+	
+	// //printf(">This is sendAPinfotoServer\n");
+    // cJSON * pduJsonObject = NULL;
+    // // cJSON * devParamJsonArray = NULL;
+    // cJSON * devDataArrayObject= NULL;
+    // // cJSON * devArray = NULL;
+    // cJSON*  devObject = NULL;	
+	
+    // pduJsonObject = cJSON_CreateObject();
+    // if(NULL == pduJsonObject)
+    // {
+        // // create object faild, exit
+        // cJSON_Delete(pduJsonObject);
+        // return PROTOCOL_FAILED;
+    // }
+    // /*add pdu type to pdu object*/
+    // cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_REPORT_DATA);
+	
+	// devDataArrayObject = cJSON_CreateArray();
+	// if (NULL == devDataArrayObject) {
+		        // // create object faild, exit
+        // cJSON_Delete(devDataArrayObject);
+        // return PROTOCOL_FAILED;
+	// }
+	// cJSON_AddItemToObject(pduJsonObject,"devData",devDataArrayObject);
+	
+	// /*
+	// * 用来测试
+	// */
+	// if(temp++ == 50) {
+		
+		// temp = 0;
+	// }
+	
+	// for (int j=0; j<1; j++) {
+		
+		// cJSON* devDataArrayContent = cJSON_CreateObject();
+		
+		// /*
+		// ** 每一次循环，都往数组里面添加新的内容 
+		// */
+		// cJSON_AddStringToObject(devDataArrayContent,"devName", "s4");
+		// cJSON_AddStringToObject(devDataArrayContent,"devId", "12345678");
+	
+		// cJSON * devParamJsonArray = cJSON_CreateArray();
+		// if (NULL == devParamJsonArray) {
+			// cJSON_Delete(devParamJsonArray);
+			// return PROTOCOL_FAILED;
+		// }
+		// cJSON_AddItemToObject(devDataArrayContent,"param",devParamJsonArray);
+		// for(int i=0; i<4; i++) {
+			// cJSON* arrayObject = cJSON_CreateObject();
+			// if(NULL == arrayObject) {
+				// cJSON_Delete(arrayObject);
+				// return PROTOCOL_FAILED;
+			// }
+			// if(i == 0) {
+				// /* 温度 */
+				// cJSON_AddNumberToObject(arrayObject,"type", 0x4006);
+				// cJSON_AddNumberToObject(arrayObject,"value", temp);			
+			// } else if( i==1 ){
+				// /* 湿度 */
+				// cJSON_AddNumberToObject(arrayObject,"type", 0x4007);
+				// cJSON_AddNumberToObject(arrayObject,"value", 50+temp);		
+			// } else if (i==2) {
+				// /* 电量百分比 */
+				// cJSON_AddNumberToObject(arrayObject,"type", 0x4004);
+				// cJSON_AddNumberToObject(arrayObject,"value", 30+temp);		
+			// } else if (i==3) {
+				// /* 在线状态 */
+				// cJSON_AddNumberToObject(arrayObject,"type", 0x4014);
+				// cJSON_AddNumberToObject(arrayObject,"value", 1);	
+			// }
+			// cJSON_AddItemToArray(devParamJsonArray,arrayObject);
+		// }
+		
+		// cJSON_AddItemToArray(devDataArrayObject,devDataArrayContent);
+	// }
+	// debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));	
+	// Frame_toSend.sn         = 1;
+	// Frame_toSend.version    = 0;
+	// Frame_toSend.netflag    = NET_TYPE_WAN;
+	// Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
+	// Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
+	
+	// Frame_packet_send(&Frame_toSend);
+	// cJSON_Delete(pduJsonObject);
+	// return PROTOCOL_OK;
+// }
 	
 /*********************************************************************
  * @fn    sendDevDataOncetoServer

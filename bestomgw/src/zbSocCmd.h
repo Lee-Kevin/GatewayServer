@@ -71,7 +71,6 @@ struct sFrame_packet {
 	uint8_t     shortAddr[2];
 	uint8_t     longAddr[8];
 	uint8_t     checkSum;
-	
 };
 typedef struct sFrame_packet sFrame_packet_t;
 
@@ -82,6 +81,19 @@ union uFrame_packet {
 typedef union uFrame_packet uSOC_packet_t;
 
 typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg ); 
+
+// Zigbee串口通信命令 相关宏定义
+
+#define CMD_TYPE_DEVICE_UPLOAD		  0x01
+#define CMD_TYPE_SYS_SENDDOWN         0x02
+#define CMD_TYPE_DEVICE_EVENT		  0x03
+#define CMD_TYPE_DEVICE_ACK		      0x04
+
+#define DEVICE_ID_S4     		      0x01
+#define DEVICE_ID_RELAY               0x17
+
+#define PAYLOAD_START			      10
+#define SHORT_ADDR_START			  21
 
 // ZLL Soc Types
 typedef enum
@@ -163,6 +175,7 @@ void zbSocProcessRpc(void);
 ******************************************************************************************/
 
 void zbSocSendCommand(uSOC_packet_t *packet);
+
 
 //ZLL API's
 void zbSocTouchLink(void);

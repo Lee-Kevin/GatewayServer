@@ -4,7 +4,7 @@
  Revised:        $Date: 2017-08-30 13:23:33 -0700 
  Revision:       
 
- Description:    This is a file that are interfaces for the protocol
+ Description:    This is a file that are interfaces for the database
 
  **************************************************************************************************/
 

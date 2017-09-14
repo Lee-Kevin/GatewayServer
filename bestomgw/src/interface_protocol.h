@@ -6,7 +6,8 @@ extern "C"
 {
 #endif
 
-
+void DealwithSerialData(uint8_t *data);
+void DealwithUploadData(uint8_t *data);
 
 #ifdef __cplusplus
 }

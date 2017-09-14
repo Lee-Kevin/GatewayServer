@@ -189,13 +189,13 @@ int main(int argc, char *argv[])
 	    scanf("%s",chartemp);
 		if(strcmp("2.1.1",chartemp) == 0) {
 			printf("\n Send device data to server\n");
-			sendDevDatatoServer();
+			//sendDevDatatoServer();
 		} else if (strcmp("2.1.2",chartemp) == 0) {
 			printf("\n Send device info to server\n");
 			sendDevinfotoServer(mac, localport);
 		} else if (strcmp("start",chartemp) == 0){
 			while(1) {
-				sendDevDatatoServer();
+			//	sendDevDatatoServer();
 				sleep(5);
 			}
 		} else {
