@@ -91,7 +91,10 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 
 #define DEVICE_ID_S4     		      0x01
 #define DEVICE_ID_RELAY               0x17
+// 允许组网命令
+#define CMD_ID_ALLOW_NETWORK          0xFD
 
+#define FRAME_CMD_DEV_ID              8
 #define PAYLOAD_START			      10
 #define SHORT_ADDR_START			  21
 

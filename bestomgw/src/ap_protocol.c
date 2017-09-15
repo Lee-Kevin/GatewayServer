@@ -395,12 +395,10 @@ int sendCommReplytoServer(sFrame_head_t* reply_packet, int result) {
  * @return
  */
 
-
-
-int sendDevinfotoServer(char *mac, int port) {
+int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 
 	sFrame_head_t Frame_toSend;
-	
+	pdu_content_t _content_toSend = *devicepdu;
 	//printf(">This is sendAPinfotoServer\n");
     cJSON * pduJsonObject = NULL;
     cJSON * devDataJsonArray = NULL;
@@ -435,19 +433,15 @@ int sendDevinfotoServer(char *mac, int port) {
         return PROTOCOL_FAILED;
 	}
 	cJSON_AddItemToObject(devDataObject,"dev",devDataJsonArray);
-	for(int i=0; i<2; i++) {
+	for(int i=0; i<1; i++) {
 		cJSON* arrayObject = cJSON_CreateObject();
 		if(NULL == arrayObject) {
 			cJSON_Delete(arrayObject);
 			return PROTOCOL_FAILED;
 		}
-		if(i == 0) {
-			cJSON_AddStringToObject(arrayObject,"devId", "12345678");
-			cJSON_AddStringToObject(arrayObject,"devName", "s4");			
-		} else {
-			cJSON_AddStringToObject(arrayObject,"devId", "12345679");
-			cJSON_AddStringToObject(arrayObject,"devName", "s12");	
-		}
+		cJSON_AddStringToObject(arrayObject,"devId",_content_toSend.deviceID);
+		cJSON_AddStringToObject(arrayObject,"devName", _content_toSend.deviceName);			
+
 		cJSON_AddItemToArray(devDataJsonArray,arrayObject);
 	}
 	
@@ -538,7 +532,7 @@ int sendDevinfotoServer(char *mac, int port) {
 			clearList = searchList;
 			searchList = searchList->next;
 			memset(clearList, 0, sizeof(devparam_t));
-			debug_printf("\n[DBG] Before free\n");
+			// debug_printf("\n[DBG] Before free\n");
 			
 			//free(clearList);
 			

@@ -53,7 +53,8 @@
 sqlite3 *gdb=NULL;
 
 extern uint8_t ENABLEZIGBEE;
- 
+extern char mac[23];
+extern int localport;
 
 void usage(char* exeName)
 {
@@ -70,17 +71,18 @@ int main(int argc, char *argv[])
 {
 	char servername[20];
 	char str[22];
-	char mac[22];
-	int localport;
 	int zbSoc_fd;
 	char dbFilename[MAX_DB_FILENAMR_LEN];
 	
 	/* Database Test */
 	sDevlist_info_t  test_device;
-	char *addr = "1234567A";
+	char *devID = "1234567A";
 	char *note = "Update";
-	test_device.status = 0;
-	test_device.addr = addr;
+	
+	test_device.devID = devID;
+	test_device.devName = "s100";
+	test_device.status = 1;
+	test_device.power  = 0xFF;
 	test_device.note = note;
 	
 	printf("%s -- %s %s\n", argv[0], __DATE__, __TIME__);
@@ -148,15 +150,15 @@ int main(int argc, char *argv[])
     printf("the dbFilename is %s, The slogpath is %s\n", dbFilename,slogpath);
 	APDatabaseInit(dbFilename);
 	
-
+	//InsertDatatoDatabase(&test_device);
 	//UpdateDatatoDatabase(dbFilename,&test_device);
 	
 	/*初始化 socket*/
-//	socketClientInit(str, socketClientCb);
+	//socketClientInit(str, socketClientCb);
 	
-//    getClientLocalPort(&localport, &mac);
+    //getClientLocalPort(&localport, &mac);
 	
-	// printf("**** The MAC addr : %s, the port : %d ******\n",mac,localport);
+	printf("**** The MAC addr : %s, the port : %d ******\n",mac,localport);
 	
 	// AP_Protocol_init(sendDatatoServer);
 	
@@ -192,7 +194,7 @@ int main(int argc, char *argv[])
 			//sendDevDatatoServer();
 		} else if (strcmp("2.1.2",chartemp) == 0) {
 			printf("\n Send device info to server\n");
-			sendDevinfotoServer(mac, localport);
+			// sendDevinfotoServer(mac, localport);
 		} else if (strcmp("start",chartemp) == 0){
 			while(1) {
 			//	sendDevDatatoServer();

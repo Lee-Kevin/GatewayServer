@@ -166,8 +166,7 @@ void data_handle(char* data);
 int sendAPinfotoServer(char *mac, int port);
 
 void AP_Protocol_init(sendDatatoServer_t sendfunc);
-
-int sendDevinfotoServer(char *mac, int port);
+int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu);
 int sendDevDatatoServer(pdu_content_t *devicepdu);
 int sendDevDataOncetoServer();
 

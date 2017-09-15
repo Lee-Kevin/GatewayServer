@@ -6,6 +6,9 @@ extern "C"
 {
 #endif
 
+extern char mac[23];
+extern int localport;
+
 void DealwithSerialData(uint8_t *data);
 void DealwithUploadData(uint8_t *data);
 

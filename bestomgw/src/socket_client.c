@@ -718,9 +718,8 @@ void getClientLocalPort(int *port, char **macaddr) {
 	
     struct ifreq ifr;  
 
-    strcpy(ifr.ifr_name, "br-lan");  
+    strcpy(ifr.ifr_name, "eth0");  
     ioctl(sClientFd, SIOCGIFHWADDR, &ifr);  
-  
     int i;  
     char mac[18];  
     for(i = 0; i < 6; ++i)  
