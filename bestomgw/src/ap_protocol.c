@@ -17,6 +17,7 @@
 #include "socket_client.h"
 #include "ap_protocol.h"
 #include "cJSON.h"
+#include "zbSocCmd.h"
 
 #define __BIG_DEBUG__
 
@@ -38,8 +39,7 @@ sFrame_head_t  *pFrame_Common = &Frame_Common;
 
 char *version[]={"1.0","1.1"};
 
-/* temp */
-uint8_t ENABLEZIGBEE = 0;
+
 
 /*
 * Local function
@@ -170,27 +170,28 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 	switch(_frame_head.pdutype) {
 	/* 通用回复处理 */
 	case  TYPE_COMMON_RSP:  
-		debug_printf("[DBG] Got the ACK from Server Code:%x\n",TYPE_COMMON_RSP);
+	
+		debug_printf("[DBG] Got the ACK from Server and Doing Nothing now\n");
+		
 		break;
 	/* AP 使能、失使能子设备入网 */	
-	case TYPE_DEV_NET_CONTROL: 
+	case TYPE_DEV_NET_CONTROL:
+	
 		debug_printf("[DBG] This is TYPE_DEV_NET_CONTROL %x\n",TYPE_DEV_NET_CONTROL);
 		int result = pJsondevData -> valueint;
 		debug_printf("[DBG] The result is : %d\n",result);
 		if(result) {
 			printf("Enable the device to join the ZigBee network\n");
-			ENABLEZIGBEE = 1;
+			zbSocOpenNwk(20);
 		} else {
 			printf("Disable the device to join the ZigBee network\n");
-			ENABLEZIGBEE = 0;
+			zbSocCloseNwk();
 		}
 		myresult = SUCCESS;
-
 		if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
-		//	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pJsonRoot));
-		} else {
-			
+		} else { /* 发送回复命令失败 */
 		}
+		
 		break;	
 	/* 子设备控制命令 写入*/
 	case TYPE_DEV_WRITE:
@@ -212,7 +213,7 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 			paramJson = cJSON_GetObjectItem(devDataJson, "param");
 			int number2 = cJSON_GetArraySize(paramJson);
 			//printf(" number2:%d\n",number2);
-
+			// 暂时忽略调光等复杂功能
 			for(int j = 0; j < number2; j++){
 				paramDataJson = cJSON_GetArrayItem(paramJson, j);
 				typeJson = cJSON_GetObjectItem(paramDataJson, "type");
@@ -235,17 +236,7 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 		break;
 	}
 	printf("-----------------------------Frame_packet_recv end-----------------------------\n");
-	
-	// pduJsonObject = cJSON_Parse(_frame_head.pdu);
-	// cJSON_AddItemToObject(pJsonRoot, "pdu", pduJsonObject);
-	
-	// debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pJsonRoot));
-    // if (NULL == APSendMsgtoServer) {
-		// debug_printf("[ERR] Please init the APSendMsgtoServer func \n");
-	// } else {
-		// APSendMsgtoServer((char *)cJSON_PrintUnformatted(pJsonRoot));
-		// debug_printf("[DBG] SEND packet to server successfully \n");
-	// }
+	cJSON_Delete(pJsondevData);
 }
 
 
@@ -556,102 +547,110 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 	//debug_printf("\n[DBG] After cJSON_Delete \n");
 	return PROTOCOL_OK;
 }
- 
-// int sendDevDatatoServer() {
 
-	// sFrame_head_t Frame_toSend;
+/*********************************************************************
+ * @fn     DataWritetoDev
+ *
+ * @brief  发送设备数据至串口
+ *
+ * @param
+ *
+ * @return
+ */
+
+void DataWritetoDev(devWriteData_t *data_towrite) {
+	devWriteData_t DatatoWrite = *data_towrite;
+	uSOC_packet_t ZocCmd_packet;
+	uint8_t devID;
+	uint8_t value = DatatoWrite.value;
+	static uint8_t payload;
+	sscanf(DatatoWrite.devId,"%02x",&devID);
 	
-	// static uint8_t temp = 0;
+	ZocCmd_packet.frame.payload_len = 0x03;
 	
-	// //printf(">This is sendAPinfotoServer\n");
-    // cJSON * pduJsonObject = NULL;
-    // // cJSON * devParamJsonArray = NULL;
-    // cJSON * devDataArrayObject= NULL;
-    // // cJSON * devArray = NULL;
-    // cJSON*  devObject = NULL;	
+	ZocCmd_packet.frame.DeviceID    = devID;
+	ZocCmd_packet.frame.DeviceType  = 0x01;
+	memset(ZocCmd_packet.frame.payload,0,sizeof(ZocCmd_packet.frame.payload));
+	switch (DatatoWrite.type) {
+		case PARAM_TYPE_S12_SWITCH:  value?(payload=0xFF):(payload=0x00); break;
+		case PARAM_TYPE_S12_REALY_1: value?(payload|=0x01):(payload&=~0x01); break;
+		case PARAM_TYPE_S12_REALY_2: value?(payload|=0x02):(payload&=~0x02); break;
+		case PARAM_TYPE_S12_REALY_3: value?(payload|=0x04):(payload&=~0x04); break;
+		case PARAM_TYPE_S12_REALY_4: value?(payload|=0x08):(payload&=~0x08); break;
+		default: break;
+	}
 	
-    // pduJsonObject = cJSON_CreateObject();
-    // if(NULL == pduJsonObject)
-    // {
-        // // create object faild, exit
-        // cJSON_Delete(pduJsonObject);
-        // return PROTOCOL_FAILED;
-    // }
-    // /*add pdu type to pdu object*/
-    // cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_REPORT_DATA);
 	
-	// devDataArrayObject = cJSON_CreateArray();
-	// if (NULL == devDataArrayObject) {
-		        // // create object faild, exit
-        // cJSON_Delete(devDataArrayObject);
-        // return PROTOCOL_FAILED;
+	ZocCmd_packet.frame.payload[0] = payload;
+	
+	// memset(ZocCmd_packet.frame.shortAddr,0,sizeof(ZocCmd_packet.frame.shortAddr));
+	memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
+	
+	// for (uint8_t i=0; i<10; i++) {
+		// sscanf(DatatoWrite.devId+2+2*i,"%02x",ZocCmd_packet.frame.shortAddr+i);
 	// }
-	// cJSON_AddItemToObject(pduJsonObject,"devData",devDataArrayObject);
 	
-	// /*
-	// * 用来测试
-	// */
-	// if(temp++ == 50) {
-		
-		// temp = 0;
-	// }
+	for (uint8_t i=0; i<2; i++) {
+		sscanf(DatatoWrite.devId+2+2*i,"%02x",ZocCmd_packet.frame.shortAddr+i);
+	}	
+	memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
+	zbSocSendCommand(&ZocCmd_packet);
 	
-	// for (int j=0; j<1; j++) {
-		
-		// cJSON* devDataArrayContent = cJSON_CreateObject();
-		
-		// /*
-		// ** 每一次循环，都往数组里面添加新的内容 
-		// */
-		// cJSON_AddStringToObject(devDataArrayContent,"devName", "s4");
-		// cJSON_AddStringToObject(devDataArrayContent,"devId", "12345678");
+	printf("------------This is DataWritetoDev-------------\n");
+	debug_printf("[DBG] The Device ID is %s\n",DatatoWrite.devId);
+	debug_printf("[DBG] The value is %x\n",DatatoWrite.value);
+	printf("------------This is DataWritetoDev END-------------\n");
+}
+
+
+
+/*********************************************************************
+ * @fn     Frame_packet_send
+ *
+ * @brief  数据包打包发送
+ *
+ * @param
+ *
+ * @return
+ */
+
+void Frame_packet_send (sFrame_head_t* _pFrame_Common) {
 	
-		// cJSON * devParamJsonArray = cJSON_CreateArray();
-		// if (NULL == devParamJsonArray) {
-			// cJSON_Delete(devParamJsonArray);
-			// return PROTOCOL_FAILED;
-		// }
-		// cJSON_AddItemToObject(devDataArrayContent,"param",devParamJsonArray);
-		// for(int i=0; i<4; i++) {
-			// cJSON* arrayObject = cJSON_CreateObject();
-			// if(NULL == arrayObject) {
-				// cJSON_Delete(arrayObject);
-				// return PROTOCOL_FAILED;
-			// }
-			// if(i == 0) {
-				// /* 温度 */
-				// cJSON_AddNumberToObject(arrayObject,"type", 0x4006);
-				// cJSON_AddNumberToObject(arrayObject,"value", temp);			
-			// } else if( i==1 ){
-				// /* 湿度 */
-				// cJSON_AddNumberToObject(arrayObject,"type", 0x4007);
-				// cJSON_AddNumberToObject(arrayObject,"value", 50+temp);		
-			// } else if (i==2) {
-				// /* 电量百分比 */
-				// cJSON_AddNumberToObject(arrayObject,"type", 0x4004);
-				// cJSON_AddNumberToObject(arrayObject,"value", 30+temp);		
-			// } else if (i==3) {
-				// /* 在线状态 */
-				// cJSON_AddNumberToObject(arrayObject,"type", 0x4014);
-				// cJSON_AddNumberToObject(arrayObject,"value", 1);	
-			// }
-			// cJSON_AddItemToArray(devParamJsonArray,arrayObject);
-		// }
-		
-		// cJSON_AddItemToArray(devDataArrayObject,devDataArrayContent);
-	// }
-	// debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));	
-	// Frame_toSend.sn         = 1;
-	// Frame_toSend.version    = 0;
-	// Frame_toSend.netflag    = NET_TYPE_WAN;
-	// Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
-	// Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
+	sFrame_head_t _frame_head = * _pFrame_Common;
 	
-	// Frame_packet_send(&Frame_toSend);
-	// cJSON_Delete(pduJsonObject);
-	// return PROTOCOL_OK;
-// }
+    cJSON * pJsonRoot = NULL; 
+    cJSON * pduJsonObject = NULL;
+    cJSON * devDataJsonArray = NULL;
+    cJSON * devDataObject= NULL;
+    cJSON * devArray = NULL;
+    cJSON*  devObject = NULL;	
 	
+	/*get sql data json*/
+    pJsonRoot = cJSON_CreateObject();
+    if(NULL == pJsonRoot)
+    {
+        printf("pJsonRoot NULL\n");
+        cJSON_Delete(pJsonRoot);
+       // return PROTOCOL_FAILED;
+    }
+    cJSON_AddNumberToObject(pJsonRoot, "sn", _frame_head.sn);
+    cJSON_AddStringToObject(pJsonRoot, "version", version[_frame_head.version]);
+    cJSON_AddNumberToObject(pJsonRoot, "netFlag", _frame_head.netflag);
+    cJSON_AddNumberToObject(pJsonRoot, "cmdType", _frame_head.cmdtype);
+	
+	pduJsonObject = cJSON_Parse(_frame_head.pdu);
+	cJSON_AddItemToObject(pJsonRoot, "pdu", pduJsonObject);
+	
+	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pJsonRoot));
+    if (NULL == APSendMsgtoServer) {
+		debug_printf("[ERR] Please init the APSendMsgtoServer func \n");
+	} else {
+		APSendMsgtoServer((char *)cJSON_PrintUnformatted(pJsonRoot));
+		debug_printf("[DBG] SEND packet to server successfully \n");
+	}
+}
+
+
 /*********************************************************************
  * @fn    sendDevDataOncetoServer
  *
@@ -696,6 +695,7 @@ int sendDevDataOncetoServer() {
 	/*
 	* 用来测试
 	*/
+	
 	if(temp++ == 50) {
 		
 		temp = 0;
@@ -801,75 +801,5 @@ int sendDevDataOncetoServer() {
 	Frame_packet_send(&Frame_toSend);
 	cJSON_Delete(pduJsonObject);
 	return PROTOCOL_OK;
-}
-
-
-
-
-/*********************************************************************
- * @fn     DataWritetoDev
- *
- * @brief  发送设备数据至串口
- *
- * @param
- *
- * @return
- */
-
-void DataWritetoDev(devWriteData_t *data_towrite) {
-	devWriteData_t DatatoWrite = *data_towrite;
-	printf("------------This is DataWritetoDev-------------\n");
-	debug_printf("[DBG] The Device ID is %s\n",DatatoWrite.devId);
-	debug_printf("[DBG] The Para Type is %x\n",DatatoWrite.type);
-	debug_printf("[DBG] The value is %x\n",DatatoWrite.value);
-	printf("------------This is DataWritetoDev END-------------\n");
-}
-
-
-
-/*********************************************************************
- * @fn     Frame_packet_send
- *
- * @brief  数据包打包发送
- *
- * @param
- *
- * @return
- */
-
-void Frame_packet_send (sFrame_head_t* _pFrame_Common) {
-	
-	sFrame_head_t _frame_head = * _pFrame_Common;
-	
-    cJSON * pJsonRoot = NULL; 
-    cJSON * pduJsonObject = NULL;
-    cJSON * devDataJsonArray = NULL;
-    cJSON * devDataObject= NULL;
-    cJSON * devArray = NULL;
-    cJSON*  devObject = NULL;	
-	
-	/*get sql data json*/
-    pJsonRoot = cJSON_CreateObject();
-    if(NULL == pJsonRoot)
-    {
-        printf("pJsonRoot NULL\n");
-        cJSON_Delete(pJsonRoot);
-       // return PROTOCOL_FAILED;
-    }
-    cJSON_AddNumberToObject(pJsonRoot, "sn", _frame_head.sn);
-    cJSON_AddStringToObject(pJsonRoot, "version", version[_frame_head.version]);
-    cJSON_AddNumberToObject(pJsonRoot, "netFlag", _frame_head.netflag);
-    cJSON_AddNumberToObject(pJsonRoot, "cmdType", _frame_head.cmdtype);
-	
-	pduJsonObject = cJSON_Parse(_frame_head.pdu);
-	cJSON_AddItemToObject(pJsonRoot, "pdu", pduJsonObject);
-	
-	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pJsonRoot));
-    if (NULL == APSendMsgtoServer) {
-		debug_printf("[ERR] Please init the APSendMsgtoServer func \n");
-	} else {
-		APSendMsgtoServer((char *)cJSON_PrintUnformatted(pJsonRoot));
-		debug_printf("[DBG] SEND packet to server successfully \n");
-	}
 }
 

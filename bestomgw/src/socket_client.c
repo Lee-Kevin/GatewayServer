@@ -669,21 +669,6 @@ void socketClientSendData (msgData_t *pMsg)
 		// datalen++;
 	// }
 	datalen = strlen(pMsg->pData);
-	// debug_printf("trying to send %d bytes,\t cmdId 0x%.2X, pData:",
-			// pMsg->len,
-			// pMsg->cmdId);
-	// debug_printf("\t");
-	// for (i = 0; i < pMsg->len; i++)
-	// {
-		// debug_printf(" 0x%.2X", pMsg->pData[i]);
-	// }
-	// debug_printf("\n");
-
-	// if (send(sClientFd, ((uint8_t*)pMsg), pMsg->len + SRPC_FRAME_HDR_SZ , 0) == -1)
-	// {
-		// perror("send");
-		// exit(1);
-	// }	
 	for (i = 0; i < datalen; i++)
 	{
 		debug_printf(" 0x%.2X", pMsg->pData[i]);
@@ -718,7 +703,7 @@ void getClientLocalPort(int *port, char **macaddr) {
 	
     struct ifreq ifr;  
 
-    strcpy(ifr.ifr_name, "eth0");  
+    strcpy(ifr.ifr_name, "br-lan");  
     ioctl(sClientFd, SIOCGIFHWADDR, &ifr);  
     int i;  
     char mac[18];  

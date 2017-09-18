@@ -585,11 +585,20 @@ void zbSocClose(void)
  */
 static void zbSocTransportWrite(uint8_t* buf, uint8_t len)
 {
-
-//printf("-->%s,%d serialPortFd=%d \n",__FUNCTION__,__LINE__,serialPortFd);
-	write (serialPortFd, buf, len);
-	//prt_debug("[DBG] serial write ",buf, len);
+	uint8_t mylen = 0;
+	printf("-->%s,%d serialPortFd=%d \n",__FUNCTION__,__LINE__,serialPortFd);
+	for (uint8_t i=0; i<len; i++) {
+		write(serialPortFd,&buf[i],1);
+		
+	}
 	tcflush(serialPortFd, TCOFLUSH);
+	
+	// mylen = write (serialPortFd, buf, len/2);
+	// mylen = write (serialPortFd, buf+len/2, len-len/2);
+	// //prt_debug("[DBG] serial write ",buf, len);
+	// tcflush(serialPortFd, TCOFLUSH);
+	printf("\n[DBG] Send command successfully1: %d, %d\n", mylen,len);
+	
 	return;
 }
 
@@ -685,6 +694,30 @@ void zbSocOpenNwk(uint8_t duration) {
 	memset(openNetWork.frame.longAddr,0,sizeof(openNetWork.frame.longAddr));
 	zbSocSendCommand(&openNetWork);
 }
+
+/*********************************************************************
+ * @fn      zbSocCloseNwk
+ *
+ * @brief   Send the open network command to a ZLL device.
+ *
+ * @param   none
+ *
+ * @return  none
+ */
+void zbSocCloseNwk() {
+	uSOC_packet_t openNetWork;
+	
+	openNetWork.frame.payload_len = 0x01;
+	openNetWork.frame.DeviceID    = 0xFD;
+	openNetWork.frame.DeviceType  = ~0xFD;
+	memset(openNetWork.frame.payload,0,sizeof(openNetWork.frame.payload));
+	openNetWork.frame.payload[0] = 0x00;
+	memset(openNetWork.frame.shortAddr,0,sizeof(openNetWork.frame.shortAddr));
+	memset(openNetWork.frame.longAddr,0,sizeof(openNetWork.frame.longAddr));
+	zbSocSendCommand(&openNetWork);
+}
+
+
 
 /*********************************************************************
  * @fn      zbSocSendIdentify
@@ -1156,7 +1189,8 @@ void zbSocSendCommand(uSOC_packet_t *packet) {
 	__packet.frame.head_1		 = 0x55;
 	__packet.frame.head_2		 = 0x3A;
 	__packet.frame.length		 = 0x20;
-	__packet.frame.seqnum		 = transSeqNumber++;
+	__packet.frame.seqnum		 = 0x00;
+	// __packet.frame.seqnum		 = transSeqNumber++;
 	__packet.frame.version[0]	 = 0x01;
 	__packet.frame.version[1]    = 0x00;
 	__packet.frame.cmdtype 		 = 0x02;  // 系统下发命令
@@ -1169,9 +1203,9 @@ void zbSocSendCommand(uSOC_packet_t *packet) {
     // __packet.frame.longAddr   = 0x3B;
     __packet.frame.checkSum      = checkData(__packet.data, sizeof(__packet.data)-1);
 	//	printf("[DBG] The packetData size is %d\n", sizeof(__packet.data));
-	printf("[DBG] The packetData is :");
+	printf("[DBG] The zbSocSendCommand packetData is :");
 	for (int i=0; i<sizeof(__packet.data); i++) {
-		printf("%2x-",__packet.data[i]);
+		printf("%02x ",__packet.data[i]);
 	}
 	
 	zbSocTransportWrite(__packet.data, sizeof(__packet.data));

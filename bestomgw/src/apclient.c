@@ -52,7 +52,6 @@
 
 sqlite3 *gdb=NULL;
 
-extern uint8_t ENABLEZIGBEE;
 extern char mac[23];
 extern int localport;
 
@@ -90,7 +89,7 @@ int main(int argc, char *argv[])
 	/* 
 	 * Client 默认连接的IP地址和端口可变
 	*/
-	sprintf(str,"%s","192.168.1.100:11235");
+	sprintf(str,"%s","192.168.1.191:11235");
 	
 	if (argc < 2) {
 		printf(
@@ -154,39 +153,21 @@ int main(int argc, char *argv[])
 	//UpdateDatatoDatabase(dbFilename,&test_device);
 	
 	/*初始化 socket*/
-	//socketClientInit(str, socketClientCb);
+	socketClientInit(str, socketClientCb);
 	
-    //getClientLocalPort(&localport, &mac);
+    getClientLocalPort(&localport, &mac);
 	
 	printf("**** The MAC addr : %s, the port : %d ******\n",mac,localport);
 	
-	// AP_Protocol_init(sendDatatoServer);
+	AP_Protocol_init(sendDatatoServer);
 	
 	// printf("-------sendAPinfotoServer---------------\n");
 	// sendAPinfotoServer(mac,localport);
-	
+	/* Open zigbee net work */
 	zbSocOpenNwk(20);
 	while(1) {
 		// struct pollfd zbfds[1];
 		char chartemp[10];
-		
-		// zbfds[0].fd  = zbSoc_fd;    /* 将Zigbee串口的描述符赋给 poll zbfds数组 */
-		// zbfds[0].events = POLLIN; 
-		// poll(zbfds,1,-1);           /* 阻塞等待串口接收数据 */
-		// //zbSocOpenNwk(20);
-		// if (zbfds[0].revents) {
-			// printf("Message from ZLL SoC\n");
-			// //zbSocProcessRpc();
-			// myzbSocProcessRpc();
-		// //	zbSocOpenNwk(20);
-		// }
-		
-		if (ENABLEZIGBEE == 1) { /* 允许设备入网 */
-			ENABLEZIGBEE = 0;
-			sendDevDataOncetoServer();
-		}
-		// sendDevDataOncetoServer();
-		// hello();
 		printf("> Please input the data number:\n>");
 	    scanf("%s",chartemp);
 		if(strcmp("2.1.1",chartemp) == 0) {

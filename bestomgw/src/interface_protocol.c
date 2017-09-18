@@ -33,6 +33,8 @@
 * 
 */
 static void UploadS4Data(uint8_t *data);
+static void UploadS5Data(uint8_t *data);
+
 
 
 static uint8_t allowNetFlag = 0;
@@ -68,15 +70,19 @@ void DealwithSerialData(uint8_t *data) {
 		uint8_t result = 0;
 		sDevlist_info_t _devInfo;
 		pdu_content_t pdu_device_info;
-		char devID[21];
-
+		char devID[23];
+		sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
 		for(uint8_t i=0; i<10; i++) {
-			sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+i]);
+			sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
 		}
-		devID[20] = '\0';
+		devID[22] = '\0';
 		switch(data[FRAME_CMD_DEV_ID]) {
-			case DEVICE_ID_S4: _devInfo.devName = "s4"; break;
-			case DEVICE_ID_RELAY: _devInfo.devName = "s12"; break;
+			case DEVICE_ID_S1:     _devInfo.devName = "s1";  break;
+			case DEVICE_ID_S4:     _devInfo.devName = "s4";  break;
+			case DEVICE_ID_RELAY:  _devInfo.devName = "s12"; break;
+			case DEVICE_ID_S3:     _devInfo.devName = "s3";  break;
+			case DEVICE_ID_S5:     _devInfo.devName = "s5";  break;
+			case DEVICE_ID_S6:     _devInfo.devName = "s6";  break;
 			default: printf("\n[ERR] Unknow Device"); break;
 		}
 		_devInfo.devID 		= devID;
@@ -88,11 +94,10 @@ void DealwithSerialData(uint8_t *data) {
 			//getClientLocalPort(&localport,&mac);
 			pdu_device_info.deviceName = _devInfo.devName;
 			pdu_device_info.deviceID   = _devInfo.devID;
-			pdu_device_info.param      = 0;
+			pdu_device_info.paramNum   = 0;
 			pdu_device_info.param	   = NULL;
-			// sendDevinfotoServer(mac,localport,&pdu_device_info);
-			sendDevinfotoServer("1234512345",11235,&pdu_device_info);
-			
+			sendDevinfotoServer(mac,localport,&pdu_device_info);
+			// sendDevinfotoServer("1234512345",11235,&pdu_device_info);
 		}
 	}
 	
@@ -131,26 +136,213 @@ void DealwithSerialData(uint8_t *data) {
 
 void DealwithUploadData(uint8_t *data) {
 	switch(data[FRAME_CMD_DEV_ID]) { // 区分具体设备
-	case DEVICE_ID_S4:
-    	UploadS4Data(data);
-		break;
-	case DEVICE_ID_RELAY:
-		break;
-	default:
-		break;
+		case DEVICE_ID_S1: UploadS1Data(data);  break;			// 人体红外  
+		case DEVICE_ID_S3: UploadS3Data(data);  break;          // 有源面板
+		case DEVICE_ID_S4: UploadS4Data(data);  break;			// 温湿度
+		case DEVICE_ID_S5: UploadS5Data(data);	break;		    // 光照度
+		case DEVICE_ID_RELAY:				break;
+		default:	break;
 	}
 	
 }
 
 
-void UploadS4Data(uint8_t *data) {
-	char devID[21];
+/*************************************************************************************************
+ * @fn      UploadS1Data()
+ *
+ * @brief   上传人体红外信息至M1
+ *
+ * @param   串口传来的数据帧
+ *
+ * @return  无
+ *************************************************************************************************/
+void UploadS1Data(uint8_t *data) {
+	char devID[23];
     pdu_content_t _pdu_content;  
 	//pdu_content_t _pdu_content;
+	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
 	for(uint8_t i=0; i<10; i++) {
-		sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+i]);
+		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
 	}
-	devID[20] = '\0';
+	devID[22] = '\0';
+	
+	uint8_t PEOPLE_DATA = data[PAYLOAD_START];
+	
+	float battery = data[PAYLOAD_START+9]*1.15*3/256;
+	if (battery<=1.8) battery = 1.8;
+	uint8_t precent = ((battery-1.8)/1.2)*100>100 ? 100 : (battery-1.8)/1.2*100;
+
+	
+	
+	_pdu_content.deviceName  = "s1";
+	_pdu_content.deviceID    = devID;
+	_pdu_content.paramNum    = 2;
+			
+		// _pdu_content.param.type       = PARAM_TYPE_S4_TEMP;
+		// _pdu_content.param.value      =(uint8_t)(temp+0.5);
+			
+    debug_printf("\n[DBG] the device ID is %s\n",devID);
+	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
+	devparam_t newdevParam[_pdu_content.paramNum];
+	newdevParam[0].type = PARAM_TYPE_S1_PEOPLE;
+	if(PEOPLE_DATA == 0xFF ) {
+		newdevParam[0].value = 1;
+	} else {
+		newdevParam[0].value = 0;
+	}
+	
+	newdevParam[0].next	 	 = &newdevParam[1];
+	newdevParam[1].type      = PARAM_TYPE_POWER_STATUS;
+	newdevParam[1].value     = precent;
+	newdevParam[1].next	 	 = NULL;
+	_pdu_content.param        =  &newdevParam[0];		
+	sendDevDatatoServer(&_pdu_content);
+	debug_printf("\n[DBG] After sendDevDatatoServer\n");
+	
+	// sDevlist_info_t  _Devlist_info;
+	// _Devlist_info.status = 1;
+	// _Devlist_info.note   = "update online";
+	// _Devlist_info.devID  = devID;
+	
+}
+
+/*************************************************************************************************
+ * @fn      UploadS3Data()
+ *
+ * @brief   上传按键信息至M1
+ *
+ * @param   串口传来的数据帧
+ *
+ * @return  无
+ *************************************************************************************************/
+void UploadS3Data(uint8_t *data) {
+	char devID[23];
+    pdu_content_t _pdu_content;  
+	//pdu_content_t _pdu_content;
+	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
+	for(uint8_t i=0; i<10; i++) {
+		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	}
+	devID[22] = '\0';
+	
+	uint8_t KEY_DATA = data[PAYLOAD_START];
+	float battery = data[PAYLOAD_START+9]*1.15*3/256;
+	if (battery<=1.8) battery = 1.8;
+	uint8_t precent = ((battery-1.8)/1.2)*100>100 ? 100 : (battery-1.8)/1.2*100;
+
+	
+	
+	_pdu_content.deviceName  = "s3";
+	_pdu_content.deviceID    = devID;
+	_pdu_content.paramNum    = 2;
+			
+		// _pdu_content.param.type       = PARAM_TYPE_S4_TEMP;
+		// _pdu_content.param.value      =(uint8_t)(temp+0.5);
+			
+    debug_printf("\n[DBG] the device ID is %s\n",devID);
+	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
+	devparam_t newdevParam[_pdu_content.paramNum];
+
+	switch (KEY_DATA) {
+		case 0x01: 	newdevParam[0].type = PARAM_TYPE_S3_KEY1; newdevParam[0].value = 1; break;
+		case 0x02: 	newdevParam[0].type = PARAM_TYPE_S3_KEY2; newdevParam[0].value = 1; break;
+		case 0x04: 	newdevParam[0].type = PARAM_TYPE_S3_KEY3; newdevParam[0].value = 1; break;
+		case 0x08: 	newdevParam[0].type = PARAM_TYPE_S3_KEY4; newdevParam[0].value = 1; break;
+		default:    printf("[ERR] Something err on S3 happened"); 						break;
+	}
+	newdevParam[0].next	 	 = &newdevParam[1];
+	newdevParam[1].type      = PARAM_TYPE_POWER_STATUS;
+	newdevParam[1].value     = precent;
+	newdevParam[1].next	 	 = NULL;
+	_pdu_content.param        =  &newdevParam[0];		
+	sendDevDatatoServer(&_pdu_content);
+	debug_printf("\n[DBG] After sendDevDatatoServer\n");
+	
+	// sDevlist_info_t  _Devlist_info;
+	// _Devlist_info.status = 1;
+	// _Devlist_info.note   = "update online";
+	// _Devlist_info.devID  = devID;
+	
+}
+
+/*************************************************************************************************
+ * @fn      UploadS5Data()
+ *
+ * @brief   上传光照传感器信息至M1
+ *
+ * @param   串口传来的数据帧
+ *
+ * @return  无
+ *************************************************************************************************/
+void UploadS5Data(uint8_t *data) {
+	char devID[23];
+	float param = 0.319; // 太阳光 0.282 荧光灯 0.146
+    pdu_content_t _pdu_content;  
+	//pdu_content_t _pdu_content;
+	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
+	for(uint8_t i=0; i<10; i++) {
+		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	}
+	devID[22] = '\0';
+	
+	uint16_t LIGHT_DATA = data[PAYLOAD_START]*256 + data[PAYLOAD_START+1];
+	float lux = LIGHT_DATA/param;
+			
+	float battery = data[PAYLOAD_START+9]*1.15*3/256;
+	if (battery<=1.8) battery = 1.8;
+	uint8_t precent = ((battery-1.8)/1.2)*100>100 ? 100 : (battery-1.8)/1.2*100;
+
+	
+	
+	_pdu_content.deviceName  = "s5";
+	_pdu_content.deviceID    = devID;
+	_pdu_content.paramNum    = 2;
+			
+		// _pdu_content.param.type       = PARAM_TYPE_S4_TEMP;
+		// _pdu_content.param.value      =(uint8_t)(temp+0.5);
+			
+    debug_printf("\n[DBG] the device ID is %s\n",devID);
+	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
+	devparam_t newdevParam[_pdu_content.paramNum];
+
+	newdevParam[0].type      = PARAM_TYPE_S5_LIGHT;
+	newdevParam[0].value     = (uint32_t)(lux+0.5);
+	newdevParam[0].next	 	 = &newdevParam[1];
+	newdevParam[1].type      = PARAM_TYPE_POWER_STATUS;
+	newdevParam[1].value     = precent;
+	newdevParam[1].next	 	 = NULL;
+	_pdu_content.param        =  &newdevParam[0];		
+
+	sendDevDatatoServer(&_pdu_content);
+	debug_printf("\n[DBG] After sendDevDatatoServer\n");
+	
+	// sDevlist_info_t  _Devlist_info;
+	// _Devlist_info.status = 1;
+	// _Devlist_info.note   = "update online";
+	// _Devlist_info.devID  = devID;
+	
+}
+
+
+
+/*************************************************************************************************
+ * @fn      UploadS4Data()
+ *
+ * @brief   上传S4温湿度传感器信息至M1
+ *
+ * @param   串口传来的数据帧
+ *
+ * @return  无
+ *************************************************************************************************/
+void UploadS4Data(uint8_t *data) {
+	char devID[23];
+    pdu_content_t _pdu_content;  
+	//pdu_content_t _pdu_content;
+	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
+	for(uint8_t i=0; i<10; i++) {
+		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	}
+	devID[22] = '\0';
 		
 	uint16_t TM_DATA = data[PAYLOAD_START]*256 + data[PAYLOAD_START+1];
 	float temp = ((175.72*TM_DATA)/65536) - 46.85;
@@ -173,13 +365,7 @@ void UploadS4Data(uint8_t *data) {
     debug_printf("\n[DBG] the device ID is %s\n",devID);
 	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
 	devparam_t newdevParam[_pdu_content.paramNum];
-		// _pdu_content.param = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
-	//		debug_printf("\n[DBG] DealwithUploadData after malloc\n");
-	//memset(newdevParam, 0, _pdu_content.paramNum*sizeof(devparam_t));
-		// memset(_pdu_content.param, 0, _pdu_content.paramNum*sizeof(devparam_t));
-		// _pdu_content.param->type     = PARAM_TYPE_S4_HUMI;
-		// _pdu_content.param->value 	 = (uint8_t)(humidity+0.5);
-		// _pdu_content.param->next 	 = newparam;
+
 		
 	newdevParam[0].type      = PARAM_TYPE_S4_HUMI;
 	newdevParam[0].value     = (uint8_t)(humidity+0.5);
@@ -193,17 +379,7 @@ void UploadS4Data(uint8_t *data) {
 	debug_printf("\n[DBG] newdevParam[2]->type = %d\n",newdevParam[2].type);	
 	debug_printf("\n[DBG] newdevParam[2]->value = %d\n",newdevParam[2].value);
 	_pdu_content.param        =  &newdevParam[0];		
-	// newdevParam[0]->type      = PARAM_TYPE_S4_HUMI;
-	// newdevParam[0]->value     = (uint8_t)(humidity+0.5);
-	// newdevParam[0]->next	  = newdevParam[1];
-	// newdevParam[1]->type	  = PARAM_TYPE_S4_TEMP;
-	// newdevParam[1]->value     = (uint8_t)(temp+0.5);;
-	// newdevParam[1]->next      = newdevParam[2];		
-	// newdevParam[2]->type	  = PARAM_TYPE_POWER_STATUS;
-	// newdevParam[2]->value     = precent;
-	// newdevParam[2]->next      = NULL;
-	// debug_printf("\n[DBG] newdevParam[2]->type = %d\n",newdevParam[2]->type);		
-	// _pdu_content.param        =  newdevParam[0];
+
 	sendDevDatatoServer(&_pdu_content);
 	debug_printf("\n[DBG] After sendDevDatatoServer\n");
 	
@@ -213,64 +389,4 @@ void UploadS4Data(uint8_t *data) {
 	// _Devlist_info.devID  = devID;
 	
 }
-
-
-// void UploadS4Data(uint8_t *data) {
-	// char devID[21];
-    // pdu_content_t _pdu_content;  
-	// //pdu_content_t _pdu_content;
-	// for(uint8_t i=0; i<10; i++) {
-		// sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+i]);
-	// }
-	// devID[20] = '\0';
-		
-	// uint16_t TM_DATA = data[PAYLOAD_START]*256 + data[PAYLOAD_START+1];
-	// float temp = ((175.72*TM_DATA)/65536) - 46.85;
-	// uint16_t RH_DATA = (data[PAYLOAD_START+2]<<8) + data[PAYLOAD_START+3];
-	// float humidity = (125*RH_DATA)/65536 - 6;
-			
-	// float battery = data[PAYLOAD_START+9]*1.15*3/256;
-	// if (battery<=1.8) battery = 1.8;
-	// uint8_t precent = (battery-1.8)/1.2>100 ? 100 : (battery-1.8)/1.2>100;
-
-			
-	// _pdu_content.deviceName  = "s4";
-	// _pdu_content.deviceID    = devID;
-	// _pdu_content.paramNum    = 3;
-			
-		// // _pdu_content.param.type       = PARAM_TYPE_S4_TEMP;
-		// // _pdu_content.param.value      =(uint8_t)(temp+0.5);
-			
-    // debug_printf("\n[DBG] the device ID is %s\n",devID);
-	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
-		// // devparam_t *newparam;
-		// // _pdu_content.param = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
-	// //		debug_printf("\n[DBG] DealwithUploadData after malloc\n");
-	// memset(newdevParam, 0, _pdu_content.paramNum*sizeof(devparam_t));
-		// // memset(_pdu_content.param, 0, _pdu_content.paramNum*sizeof(devparam_t));
-		// // _pdu_content.param->type     = PARAM_TYPE_S4_HUMI;
-		// // _pdu_content.param->value 	 = (uint8_t)(humidity+0.5);
-		// // _pdu_content.param->next 	 = newparam;
-		
-	// newdevParam[0]->type      = PARAM_TYPE_S4_HUMI;
-	// newdevParam[0]->value     = (uint8_t)(humidity+0.5);
-	// newdevParam[0]->next	  = newdevParam[1];
-	// newdevParam[1]->type	  = PARAM_TYPE_S4_TEMP;
-	// newdevParam[1]->value     = (uint8_t)(temp+0.5);;
-	// newdevParam[1]->next      = newdevParam[2];		
-	// newdevParam[2]->type	  = PARAM_TYPE_POWER_STATUS;
-	// newdevParam[2]->value     = precent;
-	// newdevParam[2]->next      = NULL;
-	// debug_printf("\n[DBG] newdevParam[2]->type = %d\n",newdevParam[2]->type);		
-	// _pdu_content.param        =  newdevParam[0];
-	// sendDevDatatoServer(&_pdu_content);
-	// debug_printf("\n[DBG] After sendDevDatatoServer\n");
-	
-	// // sDevlist_info_t  _Devlist_info;
-	// // _Devlist_info.status = 1;
-	// // _Devlist_info.note   = "update online";
-	// // _Devlist_info.devID  = devID;
-	
-// }
-
 

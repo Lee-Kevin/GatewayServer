@@ -89,7 +89,13 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 #define CMD_TYPE_DEVICE_EVENT		  0x03
 #define CMD_TYPE_DEVICE_ACK		      0x04
 
+#define DEVICE_ID_S1        		  0x07
+#define DEVICE_ID_S3        		  0x14
 #define DEVICE_ID_S4     		      0x01
+#define DEVICE_ID_S5     		      0x08
+
+#define DEVICE_ID_S6     		      0x15   ///* 红外学习 */
+
 #define DEVICE_ID_RELAY               0x17
 // 允许组网命令
 #define CMD_ID_ALLOW_NETWORK          0xFD
@@ -178,7 +184,7 @@ void zbSocProcessRpc(void);
 ******************************************************************************************/
 
 void zbSocSendCommand(uSOC_packet_t *packet);
-
+void zbSocCloseNwk();
 
 //ZLL API's
 void zbSocTouchLink(void);

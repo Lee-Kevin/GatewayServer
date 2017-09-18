@@ -48,7 +48,7 @@ typedef struct sFrame_head sFrame_head_t;
 struct device_write {
     char *devId;
     uint16_t type;
-    uint16_t value;
+    uint8_t  value;
     void *next;
 };
 typedef struct device_write devWriteData_t;
@@ -78,7 +78,7 @@ typedef struct device_write devWriteData_t;
 // 存储param对应的类型和值
 struct devparam {
 	uint16_t type;
-	int16_t  value;
+	int32_t  value;
 	void     *next;
 };
 typedef struct devparam devparam_t;
@@ -157,8 +157,26 @@ typedef struct pdu_content pdu_content_t;
 #define PARAM_TYPE_POWER_STATUS 			     0x4004
 #define PARAM_TYPE_ONINE_STATUS 			     0x4014
 
+#define PARAM_TYPE_S1_PEOPLE					 0x4001
+#define PARAM_TYPE_S1_LIGHT 					 0x4015
+#define PARAM_TYPE_S1_DEFUSING					 0x4016
+
+
+#define PARAM_TYPE_S3_KEY1						 0x4009
+#define PARAM_TYPE_S3_KEY2						 0x400A
+#define PARAM_TYPE_S3_KEY3						 0x400B
+#define PARAM_TYPE_S3_KEY4						 0x400C
+
 #define PARAM_TYPE_S4_TEMP						 0x4006
 #define PARAM_TYPE_S4_HUMI						 0x4007
+
+#define PARAM_TYPE_S5_LIGHT						 0x4008
+
+#define PARAM_TYPE_S12_SWITCH   				 0x200D
+#define PARAM_TYPE_S12_REALY_1					 0x2023
+#define PARAM_TYPE_S12_REALY_2					 0x2024
+#define PARAM_TYPE_S12_REALY_3					 0x2025
+#define PARAM_TYPE_S12_REALY_4					 0x2026
 
 
 void data_handle(char* data);
