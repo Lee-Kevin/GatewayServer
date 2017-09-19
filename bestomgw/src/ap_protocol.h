@@ -48,7 +48,7 @@ typedef struct sFrame_head sFrame_head_t;
 struct device_write {
     char *devId;
     uint16_t type;
-    uint8_t  value;
+    uint32_t  value;
     void *next;
 };
 typedef struct device_write devWriteData_t;
@@ -172,6 +172,8 @@ typedef struct pdu_content pdu_content_t;
 
 #define PARAM_TYPE_S5_LIGHT						 0x4008
 
+#define PARAM_TYPE_S6_KEY						 0x8010
+
 #define PARAM_TYPE_S12_SWITCH   				 0x200D
 #define PARAM_TYPE_S12_REALY_1					 0x2023
 #define PARAM_TYPE_S12_REALY_2					 0x2024
@@ -186,8 +188,6 @@ int sendAPinfotoServer(char *mac, int port);
 void AP_Protocol_init(sendDatatoServer_t sendfunc);
 int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu);
 int sendDevDatatoServer(pdu_content_t *devicepdu);
-int sendDevDataOncetoServer();
-
 
 
 #ifdef __cplusplus

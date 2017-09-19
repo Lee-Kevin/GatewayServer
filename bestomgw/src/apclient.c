@@ -162,7 +162,7 @@ int main(int argc, char *argv[])
 	AP_Protocol_init(sendDatatoServer);
 	
 	// printf("-------sendAPinfotoServer---------------\n");
-	// sendAPinfotoServer(mac,localport);
+	sendAPinfotoServer(mac,localport);
 	/* Open zigbee net work */
 	zbSocOpenNwk(20);
 	while(1) {

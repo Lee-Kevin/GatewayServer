@@ -366,12 +366,12 @@ void UploadS4Data(uint8_t *data) {
 	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
 	devparam_t newdevParam[_pdu_content.paramNum];
 
-		
+	// 温度扩大十倍
 	newdevParam[0].type      = PARAM_TYPE_S4_HUMI;
 	newdevParam[0].value     = (uint8_t)(humidity+0.5);
 	newdevParam[0].next	  = &newdevParam[1];
 	newdevParam[1].type	  = PARAM_TYPE_S4_TEMP;
-	newdevParam[1].value     = (uint8_t)(temp+0.5);;
+	newdevParam[1].value     = (uint16_t)(temp*10+0.5);
 	newdevParam[1].next      = &newdevParam[2];		
 	newdevParam[2].type	  = PARAM_TYPE_POWER_STATUS;
 	newdevParam[2].value     = precent;

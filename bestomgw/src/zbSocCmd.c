@@ -586,17 +586,8 @@ void zbSocClose(void)
 static void zbSocTransportWrite(uint8_t* buf, uint8_t len)
 {
 	uint8_t mylen = 0;
-	printf("-->%s,%d serialPortFd=%d \n",__FUNCTION__,__LINE__,serialPortFd);
-	for (uint8_t i=0; i<len; i++) {
-		write(serialPortFd,&buf[i],1);
-		
-	}
-	tcflush(serialPortFd, TCOFLUSH);
-	
-	// mylen = write (serialPortFd, buf, len/2);
-	// mylen = write (serialPortFd, buf+len/2, len-len/2);
-	// //prt_debug("[DBG] serial write ",buf, len);
-	// tcflush(serialPortFd, TCOFLUSH);
+	tcflush(serialPortFd, TCOFLUSH);	
+	mylen = write (serialPortFd, buf, len);
 	printf("\n[DBG] Send command successfully1: %d, %d\n", mylen,len);
 	
 	return;

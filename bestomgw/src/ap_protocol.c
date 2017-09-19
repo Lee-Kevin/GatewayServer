@@ -16,6 +16,7 @@
 #include <time.h>
 #include "socket_client.h"
 #include "ap_protocol.h"
+#include <unistd.h>
 #include "cJSON.h"
 #include "zbSocCmd.h"
 
@@ -28,7 +29,7 @@
 #endif
 
 #define VERSION                       "1.0"
-#define APNAME                        "ap1"
+#define APNAME                        "A2"
 #define SUCCESS                       1
 #define FAILED                        0
 
@@ -436,7 +437,7 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 		cJSON_AddItemToArray(devDataJsonArray,arrayObject);
 	}
 	
-	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
+	// debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
 	
 	Frame_toSend.sn         = 1;
 	Frame_toSend.version    = 0;
@@ -523,10 +524,6 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 			clearList = searchList;
 			searchList = searchList->next;
 			memset(clearList, 0, sizeof(devparam_t));
-			// debug_printf("\n[DBG] Before free\n");
-			
-			//free(clearList);
-			
 			cJSON_AddItemToArray(devParamJsonArray,arrayObject);
 		}
 		
@@ -562,47 +559,67 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 	devWriteData_t DatatoWrite = *data_towrite;
 	uSOC_packet_t ZocCmd_packet;
 	uint8_t devID;
-	uint8_t value = DatatoWrite.value;
-	static uint8_t payload;
-	sscanf(DatatoWrite.devId,"%02x",&devID);
+	uint32_t value = DatatoWrite.value;
 	
-	ZocCmd_packet.frame.payload_len = 0x03;
+	sscanf(DatatoWrite.devId,"%02x",&devID);  // 设备ID
 	
 	ZocCmd_packet.frame.DeviceID    = devID;
 	ZocCmd_packet.frame.DeviceType  = 0x01;
 	memset(ZocCmd_packet.frame.payload,0,sizeof(ZocCmd_packet.frame.payload));
-	switch (DatatoWrite.type) {
-		case PARAM_TYPE_S12_SWITCH:  value?(payload=0xFF):(payload=0x00); break;
-		case PARAM_TYPE_S12_REALY_1: value?(payload|=0x01):(payload&=~0x01); break;
-		case PARAM_TYPE_S12_REALY_2: value?(payload|=0x02):(payload&=~0x02); break;
-		case PARAM_TYPE_S12_REALY_3: value?(payload|=0x04):(payload&=~0x04); break;
-		case PARAM_TYPE_S12_REALY_4: value?(payload|=0x08):(payload&=~0x08); break;
-		default: break;
+	
+	switch(devID) {
+		case DEVICE_ID_RELAY: {  // S12 设备
+			static uint8_t payload;
+			ZocCmd_packet.frame.payload_len = 0x03;
+			switch (DatatoWrite.type) {
+				case PARAM_TYPE_S12_SWITCH:  value?(payload=0x00):(payload=0xFF);    break;
+				case PARAM_TYPE_S12_REALY_1: value?(payload&=~0x01):(payload|=0x01); break;
+				case PARAM_TYPE_S12_REALY_2: value?(payload&=~0x02):(payload|=0x02); break;
+				case PARAM_TYPE_S12_REALY_3: value?(payload&=~0x04):(payload|=0x04); break;
+				case PARAM_TYPE_S12_REALY_4: value?(payload&=~0x08):(payload|=0x08); break;			
+				default: break;
+			}
+			ZocCmd_packet.frame.payload[0] = payload;
+		}
+		break;
+		case DEVICE_ID_S6: {  // 红外学习
+			if (DatatoWrite.type == PARAM_TYPE_S6_KEY) {
+				ZocCmd_packet.frame.payload_len = 0x05;
+				switch ((value>>8)&0xFF) {
+					case 0x01: break; // 新增功能
+					case 0x02: 		  // 执行功能
+						ZocCmd_packet.frame.payload[0] = 0xFF; 
+						ZocCmd_packet.frame.payload[1] = (value&0xFF); 
+						break; 
+					case 0x03:        // 学习功能
+						ZocCmd_packet.frame.payload[0] = 0x00; 
+						ZocCmd_packet.frame.payload[1] = (value&0xFF); 	
+					break;
+					case 0x04: break; // 删除功能
+					default:   break;
+						
+				}
+			}
+			
+		} 
+		break;
+		default: printf("\n[ERR] There is something wrong with DevID"); break;
+		
 	}
-	
-	
-	ZocCmd_packet.frame.payload[0] = payload;
+
 	
 	// memset(ZocCmd_packet.frame.shortAddr,0,sizeof(ZocCmd_packet.frame.shortAddr));
 	memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
 	
-	// for (uint8_t i=0; i<10; i++) {
-		// sscanf(DatatoWrite.devId+2+2*i,"%02x",ZocCmd_packet.frame.shortAddr+i);
-	// }
-	
 	for (uint8_t i=0; i<2; i++) {
 		sscanf(DatatoWrite.devId+2+2*i,"%02x",ZocCmd_packet.frame.shortAddr+i);
 	}	
-	memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
+	//memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
 	zbSocSendCommand(&ZocCmd_packet);
+	sleep(0.8);
+	printf("\n[DBG] End of sleep\n");
 	
-	printf("------------This is DataWritetoDev-------------\n");
-	debug_printf("[DBG] The Device ID is %s\n",DatatoWrite.devId);
-	debug_printf("[DBG] The value is %x\n",DatatoWrite.value);
-	printf("------------This is DataWritetoDev END-------------\n");
 }
-
-
 
 /*********************************************************************
  * @fn     Frame_packet_send
@@ -649,157 +666,3 @@ void Frame_packet_send (sFrame_head_t* _pFrame_Common) {
 		debug_printf("[DBG] SEND packet to server successfully \n");
 	}
 }
-
-
-/*********************************************************************
- * @fn    sendDevDataOncetoServer
- *
- * @brief 当使能子设备入网以后，把子设备的初始值发送给M1
- *
- * @param 
- *
- * @return
- */
-
-int sendDevDataOncetoServer() {
-
-	sFrame_head_t Frame_toSend;
-	
-	static uint8_t temp = 0;
-	
-	//printf(">This is sendAPinfotoServer\n");
-    cJSON * pduJsonObject = NULL;
-    // cJSON * devParamJsonArray = NULL;
-    cJSON * devDataArrayObject= NULL;
-    // cJSON * devArray = NULL;
-    cJSON*  devObject = NULL;	
-	
-    pduJsonObject = cJSON_CreateObject();
-    if(NULL == pduJsonObject)
-    {
-        // create object faild, exit
-        cJSON_Delete(pduJsonObject);
-        return PROTOCOL_FAILED;
-    }
-    /*add pdu type to pdu object*/
-    cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_REPORT_DATA);
-	
-	devDataArrayObject = cJSON_CreateArray();
-	if (NULL == devDataArrayObject) {
-		        // create object faild, exit
-        cJSON_Delete(devDataArrayObject);
-        return PROTOCOL_FAILED;
-	}
-	cJSON_AddItemToObject(pduJsonObject,"devData",devDataArrayObject);
-	
-	/*
-	* 用来测试
-	*/
-	
-	if(temp++ == 50) {
-		
-		temp = 0;
-	}
-	
-	for (int j=0; j<2; j++) {
-		
-		cJSON* devDataArrayContent = cJSON_CreateObject();
-		
-		/*
-		** 每一次循环，都往数组里面添加新的内容 
-		*/
-		if (j == 1) {
-			cJSON_AddStringToObject(devDataArrayContent,"devName", "s4");
-			cJSON_AddStringToObject(devDataArrayContent,"devId", "12345678");
-		
-			cJSON * devParamJsonArray = cJSON_CreateArray();
-			if (NULL == devParamJsonArray) {
-				cJSON_Delete(devParamJsonArray);
-				return PROTOCOL_FAILED;
-			}
-			cJSON_AddItemToObject(devDataArrayContent,"param",devParamJsonArray);
-			for(int i=0; i<4; i++) {
-				cJSON* arrayObject = cJSON_CreateObject();
-				if(NULL == arrayObject) {
-					cJSON_Delete(arrayObject);
-					return PROTOCOL_FAILED;
-				}
-				if(i == 0) {
-					/* 温度 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x4006);
-					cJSON_AddNumberToObject(arrayObject,"value", temp);			
-				} else if( i==1 ){
-					/* 湿度 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x4007);
-					cJSON_AddNumberToObject(arrayObject,"value", 50+temp);		
-				} else if (i==2) {
-					/* 电量百分比 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x4004);
-					cJSON_AddNumberToObject(arrayObject,"value", 30+temp);		
-				} else if (i==3) {
-					/* 在线状态 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x4014);
-					cJSON_AddNumberToObject(arrayObject,"value", 1);	
-				}
-				cJSON_AddItemToArray(devParamJsonArray,arrayObject);
-			}
-		} else {
-			cJSON_AddStringToObject(devDataArrayContent,"devName", "s12");
-			cJSON_AddStringToObject(devDataArrayContent,"devId", "12345679");
-		
-			cJSON * devParamJsonArray = cJSON_CreateArray();
-			if (NULL == devParamJsonArray) {
-				cJSON_Delete(devParamJsonArray);
-				return PROTOCOL_FAILED;
-			}
-			cJSON_AddItemToObject(devDataArrayContent,"param",devParamJsonArray);
-			for(int i=0; i<6; i++) {
-				cJSON* arrayObject = cJSON_CreateObject();
-				if(NULL == arrayObject) {
-					cJSON_Delete(arrayObject);
-					return PROTOCOL_FAILED;
-				}
-				if(i == 0) {
-					/* 温度 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x200D);
-					cJSON_AddNumberToObject(arrayObject,"value", 1);			
-				} else if( i==1 ){
-					/* 湿度 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x2023);
-					cJSON_AddNumberToObject(arrayObject,"value", 0);		
-				} else if (i==2) {
-					/* 电量百分比 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x2024);
-					cJSON_AddNumberToObject(arrayObject,"value", 1);		
-				} else if (i==3) {
-					/* 电量百分比 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x2025);
-					cJSON_AddNumberToObject(arrayObject,"value", 1);		
-				}else if (i==4) {
-					/* 电量百分比 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x2026);
-					cJSON_AddNumberToObject(arrayObject,"value", 1);		
-				}else if (i==5) {
-					/* 在线状态 */
-					cJSON_AddNumberToObject(arrayObject,"type", 0x4014);
-					cJSON_AddNumberToObject(arrayObject,"value", 1);	
-				}
-				cJSON_AddItemToArray(devParamJsonArray,arrayObject);
-			}
-		}
-		
-		cJSON_AddItemToArray(devDataArrayObject,devDataArrayContent);
-	}
-	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));
-	
-	Frame_toSend.sn         = 1;
-	Frame_toSend.version    = 0;
-	Frame_toSend.netflag    = NET_TYPE_WAN;
-	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
-	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
-	
-	Frame_packet_send(&Frame_toSend);
-	cJSON_Delete(pduJsonObject);
-	return PROTOCOL_OK;
-}
-
