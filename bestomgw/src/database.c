@@ -305,7 +305,6 @@ static uint8_t CheckIfDataRepeat(sDevlist_info_t * devInfo) {
 			ifRepeat = 1;
 		}
 		debug_printf("\n[DBG] The num_cols is %d",num_cols);
-		
 	}
 	//debug_printf("[DBG] CheckIfDataRepeat Done \n");
     sqlite3_finalize(stmt);

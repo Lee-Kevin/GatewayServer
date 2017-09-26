@@ -419,7 +419,7 @@ int32_t init_serial(char *devicePath, ZOCRecvProcess_t fun)
 		return -1;
 	}
 
-	
+	printf("\n\n[DBG] The ZOCRTISThreadId is %d\n\n",ZOCRTISThreadId);
 	return serialPortFd;
 }		 
 

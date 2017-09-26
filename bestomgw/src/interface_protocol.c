@@ -105,15 +105,25 @@ void DealwithSerialData(uint8_t *data) {
 	case CMD_TYPE_DEVICE_UPLOAD:
 		debug_printf("\n[DBG] CMD_TYPE_DEVICE_UPLOAD\n");
 		DealwithUploadData(data);
-		
 		break;
 	case CMD_TYPE_DEVICE_EVENT:
 		debug_printf("\n[DBG] CMD_TYPE_EVENT\n");
 		if(data[FRAME_CMD_DEV_ID] == CMD_ID_ALLOW_NETWORK) {
 			allowNetFlag = 0;
 			debug_printf("\n[DBG] Don't allow zigbee Net\n");
+		} else {      // 处理心跳包数据
+			char devID[23];
+			sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
+			for(uint8_t i=0; i<10; i++) {
+				sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+			}
+			devID[22] = '\0';
+			sDevlist_info_t  _Devlist_info;
+			_Devlist_info.status = 1;
+			_Devlist_info.note   = "update online";
+			_Devlist_info.devID  = devID;
+			UpdateDevStatustoDatabase(&_Devlist_info);
 		}
-
 		break;
 	case CMD_TYPE_DEVICE_ACK:
 		debug_printf("\n[DBG] CMD_TYPE_DEVICE_ACK\n");
@@ -125,7 +135,6 @@ void DealwithSerialData(uint8_t *data) {
 				allowNetFlag = 0;
 				debug_printf("\n[DBG] Don't allow zigbee Net\n");
 			}
-
 		}
 		break;
 	default:

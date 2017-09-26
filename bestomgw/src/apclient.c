@@ -73,17 +73,6 @@ int main(int argc, char *argv[])
 	int zbSoc_fd;
 	char dbFilename[MAX_DB_FILENAMR_LEN];
 	
-	/* Database Test */
-	sDevlist_info_t  test_device;
-	char *devID = "1234567A";
-	char *note = "Update";
-	
-	test_device.devID = devID;
-	test_device.devName = "s100";
-	test_device.status = 1;
-	test_device.power  = 0xFF;
-	test_device.note = note;
-	
 	printf("%s -- %s %s\n", argv[0], __DATE__, __TIME__);
 	
 	/* 
@@ -100,7 +89,6 @@ int main(int argc, char *argv[])
 				argv[0]);
 		printf("--The default IP address and port is %s--\n",str);
 		printf("\n******************************************************\n",str);
-		
 	} else {
 		for (int i=0; i < argc; i++) {
 			printf("Argument %d is %s.\n", i, argv[i]);
@@ -124,9 +112,6 @@ int main(int argc, char *argv[])
 		
 		zbSoc_fd = init_serial("/dev/ttyS0",zbSocfun);
 		printf("Open zbSoc_fd : %d\n",zbSoc_fd);
-		//if (zbSoc_fd<0 )
-		//	{zbSoc_fd = zbSocOpen("/dev/null");}
-		//init_serial();
 	}
 	else
 	{
@@ -162,7 +147,8 @@ int main(int argc, char *argv[])
 	AP_Protocol_init(sendDatatoServer);
 	
 	// printf("-------sendAPinfotoServer---------------\n");
-	sendAPinfotoServer(mac,localport);
+	//sendAPinfotoServer(mac,localport);
+	
 	/* Open zigbee net work */
 	zbSocOpenNwk(20);
 	while(1) {
