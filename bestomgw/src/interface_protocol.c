@@ -4,7 +4,7 @@
  Revised:        $Date: 2017-09-13 13:23:33 -0700 
  Revision:       
 
- Description:    This is a file that are interfaces for the protocol
+ Description:    This is a file that deal with the data from UART
 
  **************************************************************************************************/
 
@@ -42,8 +42,11 @@ static uint8_t allowNetFlag = 0;
 * 变量声明
 */
 
-char mac[23];
-int localport;
+extern char mac[23];
+extern int localport;
+
+// char mac[23];
+// int localport;
 
 /*********************************************************************
  * @fn     DealwithSerialData
@@ -127,7 +130,17 @@ void DealwithSerialData(uint8_t *data) {
 		break;
 	case CMD_TYPE_DEVICE_ACK:
 		debug_printf("\n[DBG] CMD_TYPE_DEVICE_ACK\n");
-		if(data[FRAME_CMD_DEV_ID] == CMD_ID_ALLOW_NETWORK) {
+		DealwithAckData(data);
+		break;
+	default:
+		break;
+	}
+}
+
+
+void DealwithAckData(uint8_t *data) {
+	switch(data[FRAME_CMD_DEV_ID]) {
+		case CMD_ID_ALLOW_NETWORK:  
 			if (data[PAYLOAD_START] == 0xFF) {
 				allowNetFlag = 1;
 				debug_printf("\n[DBG] allow zigbee Net  \n");
@@ -135,13 +148,16 @@ void DealwithSerialData(uint8_t *data) {
 				allowNetFlag = 0;
 				debug_printf("\n[DBG] Don't allow zigbee Net\n");
 			}
-		}
-		break;
-	default:
-		break;
+			break;
+		case DEVICE_ID_RELAY:
+			UploadS12Data(data);
+			break;
+		default:
+			debug_printf("\n[ERR] Something Err with ack data\n");
+			break;
 	}
-	
 }
+
 
 void DealwithUploadData(uint8_t *data) {
 	switch(data[FRAME_CMD_DEV_ID]) { // 区分具体设备
@@ -294,7 +310,7 @@ void UploadS5Data(uint8_t *data) {
 	}
 	devID[22] = '\0';
 	
-	uint16_t LIGHT_DATA = data[PAYLOAD_START]*256 + data[PAYLOAD_START+1];
+	uint16_t LIGHT_DATA = data[PAYLOAD_START+1]*256 + data[PAYLOAD_START];
 	float lux = LIGHT_DATA/param;
 			
 	float battery = data[PAYLOAD_START+9]*1.15*3/256;
@@ -389,6 +405,65 @@ void UploadS4Data(uint8_t *data) {
 	debug_printf("\n[DBG] newdevParam[2]->value = %d\n",newdevParam[2].value);
 	_pdu_content.param        =  &newdevParam[0];		
 
+	sendDevDatatoServer(&_pdu_content);
+	debug_printf("\n[DBG] After sendDevDatatoServer\n");
+	
+	// sDevlist_info_t  _Devlist_info;
+	// _Devlist_info.status = 1;
+	// _Devlist_info.note   = "update online";
+	// _Devlist_info.devID  = devID;
+	
+}
+
+/*************************************************************************************************
+ * @fn      UploadS12Data()
+ *
+ * @brief   上传回路控制器状态
+ *
+ * @param   串口传来的数据帧
+ *
+ * @return  无
+ *************************************************************************************************/
+void UploadS12Data(uint8_t *data) {
+	char devID[23];
+    pdu_content_t _pdu_content;  
+	//pdu_content_t _pdu_content;
+	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
+	for(uint8_t i=0; i<10; i++) {
+		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	}
+	devID[22] = '\0';
+	
+	uint8_t STATUS_DATA = data[PAYLOAD_START];
+	
+	_pdu_content.deviceName  = "s12";
+	_pdu_content.deviceID    = devID;
+	_pdu_content.paramNum    = 5;
+			
+    debug_printf("\n[DBG] the %s device ID is %s\n",_pdu_content.deviceName,devID);
+	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
+	devparam_t newdevParam[_pdu_content.paramNum];
+	newdevParam[0].type = PARAM_TYPE_S12_SWITCH;
+	if((STATUS_DATA&0x0F) == 0x0F ) {  
+		newdevParam[0].value = 0;
+	} else {
+		newdevParam[0].value = 1;
+	}
+	newdevParam[0].next	 	 = &newdevParam[1];
+	newdevParam[1].type      = PARAM_TYPE_S12_REALY_1;
+	newdevParam[1].value     = (~STATUS_DATA)&0x01;
+	// newdevParam[1].value     = ~(STATUS_DATA&0xFE);
+	newdevParam[1].next	 	 = &newdevParam[2];
+	newdevParam[2].type      = PARAM_TYPE_S12_REALY_2;
+	newdevParam[2].value     = (~(STATUS_DATA>>1))&0x01;
+	newdevParam[2].next	 	 = &newdevParam[3];	
+	newdevParam[3].type      = PARAM_TYPE_S12_REALY_3;
+	newdevParam[3].value     = (~(STATUS_DATA>>2))&0x01;
+	newdevParam[3].next	 	 = &newdevParam[4];
+	newdevParam[4].type      = PARAM_TYPE_S12_REALY_4;
+	newdevParam[4].value     = (~(STATUS_DATA>>3))&0x01;
+	newdevParam[4].next	 	 = NULL;	
+	_pdu_content.param        =  &newdevParam[0];		
 	sendDevDatatoServer(&_pdu_content);
 	debug_printf("\n[DBG] After sendDevDatatoServer\n");
 	

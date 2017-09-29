@@ -71,7 +71,9 @@ typedef struct LinkedMsg linkedMsg;
 /**************************************************************************************************
  *                                        Global Variables
  **************************************************************************************************/
-
+char mac[23];
+int localport;
+ 
 /**************************************************************************************************
  *                                        Local Variables
  **************************************************************************************************/
@@ -110,7 +112,7 @@ struct addrinfo *resAddr;
 #endif
 
 socketClientCb_t socketClientRxCb;
-
+socketSendApinfo_t socketApSendinfo;
 /**************************************************************************************************
  *                                     Local Function Prototypes
  **************************************************************************************************/
@@ -332,14 +334,15 @@ static void delSyncRes(void);
 	// return res;
 // }
 
-int socketClientInit(const char *devPath, socketClientCb_t cb) {
+int socketClientInit(const char *devPath, socketClientCb_t cb,socketSendApinfo_t apsendtoserver) {
 	int res = 1;
-	/*
+	/*socketApsendInfo_tsocketSendApinfo_t
 	* 1. 接收注册的回调函数，然后在信息处理线程里面进行处理 
 	* 2. 在handleThreadFunc函数中调用
 	* 3. 该函数的参数为 接收到的，需要处理的信息
 	*/
 	socketClientRxCb = cb;
+	socketApSendinfo = apsendtoserver;
 	
 	if (pthread_create(&SocketThreadId, NULL, SocketThreadFunc, (void *)devPath)) {
 		// thread creation failed
@@ -474,6 +477,7 @@ static void *SocketThreadFunc (void *ptr) {
 				}
 			}
 		} while (res !=1);
+
 		SocketErrFlag = 0;
 		int no = 0;
 		// allow out-of-band data
@@ -481,7 +485,11 @@ static void *SocketThreadFunc (void *ptr) {
 		{
 			perror("setsockopt");
 			res = 0;
-		} 
+		}
+		
+		getClientLocalPort(&localport, &mac);
+		
+		socketApSendinfo(mac,localport);
 		
 		initSyncRes();
 		

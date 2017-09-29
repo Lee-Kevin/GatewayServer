@@ -163,7 +163,7 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
     {
         printf("pJsonRoot NULL\n");
         cJSON_Delete(pJsondevData);
-       // return PROTOCOL_FAILED;
+		return;
     }
 	
 	printf("-----------------------------Frame_packet_recv-----------------------------\n");
@@ -171,7 +171,7 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 	switch(_frame_head.pdutype) {
 	/* 通用回复处理 */
 	case  TYPE_COMMON_RSP:  
-	
+		// 心跳回复处理
 		debug_printf("[DBG] Got the ACK from Server and Doing Nothing now\n");
 		
 		break;
@@ -616,10 +616,12 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 	}	
 	//memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
 	zbSocSendCommand(&ZocCmd_packet);
-	sleep(0.8);
+	usleep(500000);
 	printf("\n[DBG] End of sleep\n");
 	
 }
+
+
 
 /*********************************************************************
  * @fn     Frame_packet_send

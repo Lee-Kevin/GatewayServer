@@ -73,6 +73,9 @@ typedef struct ATTR_PACKED
   uint8_t pData[MY_AP_MAX_BUF_LEN];
 } msgData_t;
 
+extern char mac[23];
+extern int localport;
+
 // typedef struct ATTR_PACKED
 // {
   // uint8_t cmdId;
@@ -84,7 +87,7 @@ typedef struct ATTR_PACKED
 * 函数指针，用户的信息处理函数
 */
 typedef void (*socketClientCb_t)( msgData_t *msg ); 
-
+typedef void (*socketSendApinfo_t)(char *mac,int port); 
 
 /**************************************************************************************************
  *                                        Global Variables
@@ -118,7 +121,7 @@ typedef void (*socketClientCb_t)( msgData_t *msg );
  *              FALSE, otherwise.
  *
  **************************************************************************************************/
-int socketClientInit(const char *devPath, socketClientCb_t cb);
+int socketClientInit(const char *devPath, socketClientCb_t cb,socketSendApinfo_t sendAPinfotoServer);
 
 
 /**************************************************************************************************

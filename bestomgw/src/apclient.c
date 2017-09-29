@@ -138,9 +138,9 @@ int main(int argc, char *argv[])
 	//UpdateDatatoDatabase(dbFilename,&test_device);
 	
 	/*初始化 socket*/
-	socketClientInit(str, socketClientCb);
+	socketClientInit(str, socketClientCb,sendAPinfotoServer);
 	
-    getClientLocalPort(&localport, &mac);
+    // getClientLocalPort(&localport, &mac);
 	
 	printf("**** The MAC addr : %s, the port : %d ******\n",mac,localport);
 	
@@ -150,7 +150,7 @@ int main(int argc, char *argv[])
 	//sendAPinfotoServer(mac,localport);
 	
 	/* Open zigbee net work */
-	zbSocOpenNwk(20);
+	// zbSocOpenNwk(20);
 	while(1) {
 		// struct pollfd zbfds[1];
 		char chartemp[10];

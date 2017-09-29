@@ -6,11 +6,12 @@ extern "C"
 {
 #endif
 
-extern char mac[23];
-extern int localport;
+// extern char mac[23];
+// extern int localport;
 
 void DealwithSerialData(uint8_t *data);
 void DealwithUploadData(uint8_t *data);
+void DealwithAckData(uint8_t *data);
 
 #ifdef __cplusplus
 }

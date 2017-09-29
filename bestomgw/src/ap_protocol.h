@@ -78,7 +78,7 @@ typedef struct device_write devWriteData_t;
 // 存储param对应的类型和值
 struct devparam {
 	uint16_t type;
-	int32_t  value;
+	uint32_t  value;
 	void     *next;
 };
 typedef struct devparam devparam_t;
