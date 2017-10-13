@@ -1,6 +1,6 @@
  /**************************************************************************************************
   Filename:       socket_client.c
-  Revised:        $Date: 2012-03-21 17:37:33 -0700 (Wed, 21 Mar 2012) $
+  Revised:        $Date: 2017-10-11
   Revision:       $Revision: 246 $
   Author:		  Jiankai Li
 
@@ -26,6 +26,9 @@
 #include <net/if.h>
 #include <sys/ioctl.h>
 #include <arpa/inet.h>
+
+#include <sys/select.h>
+#include <time.h>
 
 #ifndef NPI_UNIX
 #include <netdb.h>
@@ -99,9 +102,18 @@ static pthread_t RTISThreadId;
 static void *SocketThreadFunc (void *ptr);
 static void *rxThreadFunc (void *ptr);
 static void *handleThreadFunc (void *ptr);
+static void *heartBeatThreadFunc (void *ptr);
 
 // Mutex to handle rx 互斥锁， pthread_mutex_t 是一个结构体，PTHREAD_MUTEX_INITIALIZER   结构常量
 pthread_mutex_t clientRxMutex = PTHREAD_MUTEX_INITIALIZER;
+
+// There are variables about the heartbeat
+
+#define HeartBeatTimeOut           2
+#define HeartBeatTimeInterval      10
+#define HeartBeatTimeOutCount      2
+pthread_cond_t heartBeatCond;
+pthread_mutex_t heartBeatMutex = PTHREAD_MUTEX_INITIALIZER;
 
 // conditional variable to notify that the AREQ is handled
 static pthread_cond_t clientRxCond;
@@ -113,6 +125,7 @@ struct addrinfo *resAddr;
 
 socketClientCb_t socketClientRxCb;
 socketSendApinfo_t socketApSendinfo;
+socketHeartbeat_t socketHeartbeatFun;
 /**************************************************************************************************
  *                                     Local Function Prototypes
  **************************************************************************************************/
@@ -121,218 +134,9 @@ static void delSyncRes(void);
 
 
 
-/**************************************************************************************************
- *
- * @fn          socketClientInit
- *
- * @brief       This function initializes RTI Surrogate
- *
- * input parameters
- *
- * @param       ipAddress - path to the NPI Server Socket
- *
- * output parameters
- *
- * None.
- *
- * @return      1 if the surrogate module started off successfully.
- *              0, otherwise.
- *
- **************************************************************************************************/
-
- // int socketClientInit(const char *devPath, socketClientCb_t cb)
-// {
-	// int res = 1, i = 0;
-	// const char *ipAddress = "", *port = "";
-	// char *pStr, strTmp[128];
-	
-	// /*
-	// * 1. 接收注册的回调函数，然后在信息处理线程里面进行处理 
-	// * 2. 在handleThreadFunc函数中调用
-	// * 3. 该函数的参数为 接收到的，需要处理的信息
-	// */
-	// socketClientRxCb = cb;
-	
-	// // if (pthread_create(&SocketThreadId, NULL, SocketThreadFunc, (void *)devPath)) {
-		// // // thread creation failed
-		// // printf("Failed to create SocketThreadFunc handle thread\n");
-		// // return -1;
-	// // }
-	
-	// strncpy(strTmp, devPath, 128);
-	// // use strtok to split string and find IP address and port;
-	// // the format is = IPaddress:port
-	// // Get first token
-	// pStr = strtok (strTmp, ":");
-	// while ( pStr != NULL)
-	// {
-		// if (i == 0)
-		// {
-			// // First part is the IP address
-			// ipAddress = pStr;
-		// }
-		// else if (i == 1)
-		// {
-			// // Second part is the port
-			// port = pStr;
-		// }
-		// i++;
-		// if (i > 2)
-			// break;
-		// // Now get next token
-		// pStr = strtok (NULL, " ,:;-|");
-	// }
-
-	// /**********************************************************************
-	 // * Initiate synchronization resources
-	 // * 初始化需要同步的资源，互斥锁，条件变量等
-	 // */
-	// initSyncRes();
-
-	// /**********************************************************************
-	 // * Connect to the NPI server
-	 // **********************************************************************/
-
-// #ifdef NPI_UNIX
-    // int len;
-    // struct sockaddr_un remote;
-
-    // if ((sClientFd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
-        // perror("socket");
-        // exit(1);
-    // }
-// #else
-    // struct addrinfo hints;
-
-    // memset(&hints, 0, sizeof(hints));
-    // hints.ai_family = AF_UNSPEC;
-    // hints.ai_socktype = SOCK_STREAM;
-
-	// if (port == NULL)
-	// {
-		// // Fall back to default if port was not found in the configuration file
-		// printf("Warning! Port not sent to RTIS. Will use default port: %s", DEFAULT_PORT);
-
-	    // if ((res = getaddrinfo(ipAddress, DEFAULT_PORT, &hints, &resAddr)) != 0)
-	    // {
-	    	// fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(res));
-	    	// res = 2;
-	    // }
-	    // else
-	    // {
-	    	// // Because of inverted logic on return value
-	    	// res = 1;
-	    // }
-	// }
-	// else
-	// {
-	    // printf("Port: %s\n\n", port);
-	    // if ((res = getaddrinfo(ipAddress, port, &hints, &resAddr)) != 0)
-	    // {
-	    	// fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(res));
-	    	// res = 2;
-	    // }
-	    // else
-	    // {
-	    	// // Because of inverted logic on return value
-	    	// res = 1;
-	    // }
-	// }
-
-    // printf("IP addresses for %s:\n\n", ipAddress);
-
-    // struct addrinfo *p;
-    // char ipstr[INET6_ADDRSTRLEN];
-    // for(p = resAddr;p != NULL; p = p->ai_next) {
-        // void *addr;
-        // char *ipver;
-
-        // // get the pointer to the address itself,
-        // // different fields in IPv4 and IPv6:
-        // if (p->ai_family == AF_INET) { // IPv4
-            // struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
-            // addr = &(ipv4->sin_addr);
-            // ipver = "IPv4";
-        // } else { // IPv6
-            // struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
-            // addr = &(ipv6->sin6_addr);
-            // ipver = "IPv6";
-        // }
-
-        // // convert the IP to a string and print it:
-        // inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
-        // printf("  %s: %s\n", ipver, ipstr);
-    // }
-
-
-    // if ((sClientFd = socket(resAddr->ai_family, resAddr->ai_socktype, resAddr->ai_protocol)) == -1) {
-        // perror("socket");
-        // exit(1);
-    // }
-// #endif
-
-    // printf("Trying to connect...\n");
-
-// #ifdef NPI_UNIX
-    // remote.sun_family = AF_UNIX;
-    // strcpy(remote.sun_path, ipAddress);
-    // len = strlen(remote.sun_path) + sizeof(remote.sun_family);
-    // if (connect(sClientFd, (struct sockaddr *)&remote, len) == -1) {
-        // perror("connect");
-        // res = 0;
-    // }
-// #else
-    // if (connect(sClientFd, resAddr->ai_addr, resAddr->ai_addrlen) == -1) {
-        // perror("connect");
-		// printf("\nThere is something wrong\n");
-        // res = 0;
-    // }
-// #endif
-
-    // if (res == 1) {
-		// printf("Connected.\n");
-	// }
-    	
-
-
-	// int no = 0;
-	// // allow out-of-band data
-	// if (setsockopt(sClientFd, SOL_SOCKET, SO_OOBINLINE, &no, sizeof(int)) == -1)
-	// {
-		// perror("setsockopt");
-		// res = 0;
-	// }
-
-	// /**********************************************************************
-	 // * Create thread which can read new messages from the NPI server
-	 // **********************************************************************/
-
-	// //printf("\n---------------Going to Create Thread rxThreadFunc------------------------\n");
-
-	// if (pthread_create(&RTISThreadId, NULL, rxThreadFunc, NULL))
-	// {
-		// // thread creation failed
-		// printf("Failed to create RTIS LNX IPC Client read thread\n");
-		// return -1;
-	// }
-
-	// /**********************************************************************
-	 // * Create thread which can handle new messages from the NPI server
-	 // **********************************************************************/
-
-	// //printf("\n---------------Going to Create Thread handleThreadFunc----------------------\n");
-	
-	// if (pthread_create(&RTISThreadId, NULL, handleThreadFunc, NULL))
-	// {
-		// // thread creation failed
-		// printf("Failed to create RTIS LNX IPC Client handle thread\n");
-		// return -1;
-	// }
-
-	// printf("\n\n[DBG] The RTISThreadId is %d\n\n",RTISThreadId);
-	
-	// return res;
-// }
+void heartBeatRegisterCallbackFun(socketHeartbeat_t heartbeatfun) {
+	socketHeartbeatFun = heartbeatfun;
+}
 
 int socketClientInit(const char *devPath, socketClientCb_t cb,socketSendApinfo_t apsendtoserver) {
 	int res = 1;
@@ -457,7 +261,7 @@ static void *SocketThreadFunc (void *ptr) {
 			} else {
 				res = 1;
 			}
-			printf("Trying to connect...\n");
+			printf("\nTrying to connect...\n");
 			
 			if (connect(sClientFd, resAddr->ai_addr, resAddr->ai_addrlen) == -1) {
 				perror("connect");
@@ -499,12 +303,6 @@ static void *SocketThreadFunc (void *ptr) {
 			printf("Failed to create RTIS LNX IPC Client read thread\n");
 			// return -1;
 		}
-
-		/**********************************************************************
-		 * Create thread which can handle new messages from the NPI server
-		 **********************************************************************/
-
-		//printf("\n---------------Going to Create Thread handleThreadFunc----------------------\n");
 		
 		if (pthread_create(&RTISThreadId, NULL, handleThreadFunc, NULL))
 		{
@@ -512,7 +310,14 @@ static void *SocketThreadFunc (void *ptr) {
 			printf("Failed to create RTIS LNX IPC Client handle thread\n");
 			// return -1;
 		}
-
+		
+		if (pthread_create(&RTISThreadId, NULL, heartBeatThreadFunc, NULL))
+		{
+			// thread creation failed
+			printf("Failed to create heartBeatThreadFunc \n");
+			// return -1;
+		}
+		
 		if (tryLockFirstTimeOnly == 0) {
 			// Lock mutex
 			debug_printf("[MUTEX] Lock AREQ Mutex (Handle)\n");
@@ -523,12 +328,72 @@ static void *SocketThreadFunc (void *ptr) {
 		}
 		printf("\n\n[DBG] The RTISThreadId is %d\n\n",RTISThreadId);
 		pthread_cond_wait(&socketErrCond, &clientRxMutex);
+		
+		debug_printf("\n[DBG] Wait for the thread end...\n");
+		// pthread_join(RTISThreadId,&handleThreadFunc);
+		// pthread_join(RTISThreadId,&heartBeatThreadFunc);
+		// pthread_join(RTISThreadId,&rxThreadFunc);
 		debug_printf("\n\n[DBG] The SocketThreadFunc get the socketErrCond\n");
 		j = 0; // the index of the time 
 		sClientFd = 0;
 		
 	} while(1);
 }
+
+static void *heartBeatThreadFunc (void *ptr) {
+	uint8_t done = 0, tryLockFirstTimeOnly = 0;
+	static uint8_t timeoutCount = 0;
+	struct timeval temp;
+	struct timespec timeout;
+	
+	srand((int)time(0));  //设置随机数种子
+
+	do {
+		if (tryLockFirstTimeOnly == 0) {
+			// Lock mutex
+			debug_printf("[MUTEX] Lock AREQ Mutex (Handle)\n");
+			pthread_mutex_lock(&heartBeatMutex);
+
+			debug_printf("\n[MUTEX] AREQ Lock (Handle)\n");
+			tryLockFirstTimeOnly = 1;  
+		}
+		temp.tv_sec = HeartBeatTimeInterval; // 5s
+		
+		uint32_t tempdata = (int)(1000.0*random()/(RAND_MAX+1.0));
+		temp.tv_usec = 1000*tempdata;
+		debug_printf("\n[DBG] I am in the heartBeatThreadFunc\n");	
+		debug_printf("[DBG] The Random data is %d\n",tempdata);
+		
+		select(0,NULL,NULL,NULL,&temp);
+		
+		if(SocketErrFlag == 1) {
+			done = 1; // there is something wrong
+			break;
+		} else {
+			if (NULL != socketHeartbeatFun) {
+				socketHeartbeatFun(mac);
+				gettimeofday(&temp,NULL);  // get now time 
+				timeout.tv_sec = temp.tv_sec + HeartBeatTimeOut;
+				if (ETIMEDOUT == pthread_cond_timedwait(&heartBeatCond,&heartBeatMutex,&timeout)) {
+					if (++timeoutCount >= HeartBeatTimeOutCount) {
+						SocketErrFlag = 1;
+						break;
+					}
+					
+					debug_printf("[DBG] HeartBeatTimeOut \n");
+				} else {
+					timeoutCount = 0;
+					debug_printf("[DBG] HeartBeat Recive the ack from server \n");
+				}
+			}	
+		}
+	}while (!done);
+	
+	debug_printf("[DBG] I am going to exit heartBeatThreadFunc");
+	SocketErrFlag = 1;  // Socket 发生错误  
+}
+
+
 
 static void *handleThreadFunc (void *ptr)
 {
@@ -765,6 +630,11 @@ static void *rxThreadFunc (void *ptr)
 			printf("\n-----I have already send the signal clientRxCond ---\n");
 			debug_printf("[MUTEX] Signal message read (Read)... sent\n");
 		}
+		
+		if(SocketErrFlag == 1) {
+			done = 1;
+			break;
+		}
 
 	} while (!done);
 	SocketErrFlag = 1;  // Socket 发生错误
@@ -783,10 +653,13 @@ static void initSyncRes(void)
   // initialize all mutexes
   // 动态方式 初始化互斥锁
   pthread_mutex_init(&clientRxMutex, NULL);
+  pthread_mutex_init(&heartBeatMutex, NULL);
 
   // initialize all conditional variables
   // 初始化条件变量
   pthread_cond_init(&clientRxCond, NULL);
+  pthread_cond_init(&socketErrCond, NULL);
+  pthread_cond_init(&heartBeatCond, NULL);
 }
 
 /* Destroy thread synchronization resources */
@@ -891,17 +764,13 @@ void getClientLocalPort(int *port, char **macaddr) {
 	
     struct ifreq ifr;  
 
-    strcpy(ifr.ifr_name, "br-lan");  
+    strcpy(ifr.ifr_name, "eth0");  
     ioctl(sClientFd, SIOCGIFHWADDR, &ifr);  
     int i;  
     char mac[18];  
     for(i = 0; i < 6; ++i)  
     {  
-		if (i == 5) {
-			sprintf(mac + 2*i, "%02x", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
-		} else {
-			sprintf(mac + 2*i, "%02x", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
-		}
+		sprintf(mac + 2*i, "%02x", (unsigned char)ifr.ifr_hwaddr.sa_data[i]);  
     }  
     debug_printf("[DBG]MAC: %s\n",mac);
 	
@@ -913,3 +782,217 @@ void getClientLocalPort(int *port, char **macaddr) {
 
 /**************************************************************************************************
  **************************************************************************************************/
+
+/**************************************************************************************************
+ *
+ * @fn          socketClientInit
+ *
+ * @brief       This function initializes RTI Surrogate
+ *
+ * input parameters
+ *
+ * @param       ipAddress - path to the NPI Server Socket
+ *
+ * output parameters
+ *
+ * None.
+ *
+ * @return      1 if the surrogate module started off successfully.
+ *              0, otherwise.
+ *
+ **************************************************************************************************/
+
+ // int socketClientInit(const char *devPath, socketClientCb_t cb)
+// {
+	// int res = 1, i = 0;
+	// const char *ipAddress = "", *port = "";
+	// char *pStr, strTmp[128];
+	
+	// /*
+	// * 1. 接收注册的回调函数，然后在信息处理线程里面进行处理 
+	// * 2. 在handleThreadFunc函数中调用
+	// * 3. 该函数的参数为 接收到的，需要处理的信息
+	// */
+	// socketClientRxCb = cb;
+	
+	// // if (pthread_create(&SocketThreadId, NULL, SocketThreadFunc, (void *)devPath)) {
+		// // // thread creation failed
+		// // printf("Failed to create SocketThreadFunc handle thread\n");
+		// // return -1;
+	// // }
+	
+	// strncpy(strTmp, devPath, 128);
+	// // use strtok to split string and find IP address and port;
+	// // the format is = IPaddress:port
+	// // Get first token
+	// pStr = strtok (strTmp, ":");
+	// while ( pStr != NULL)
+	// {
+		// if (i == 0)
+		// {
+			// // First part is the IP address
+			// ipAddress = pStr;
+		// }
+		// else if (i == 1)
+		// {
+			// // Second part is the port
+			// port = pStr;
+		// }
+		// i++;
+		// if (i > 2)
+			// break;
+		// // Now get next token
+		// pStr = strtok (NULL, " ,:;-|");
+	// }
+
+	// /**********************************************************************
+	 // * Initiate synchronization resources
+	 // * 初始化需要同步的资源，互斥锁，条件变量等
+	 // */
+	// initSyncRes();
+
+	// /**********************************************************************
+	 // * Connect to the NPI server
+	 // **********************************************************************/
+
+// #ifdef NPI_UNIX
+    // int len;
+    // struct sockaddr_un remote;
+
+    // if ((sClientFd = socket(AF_UNIX, SOCK_STREAM, 0)) == -1) {
+        // perror("socket");
+        // exit(1);
+    // }
+// #else
+    // struct addrinfo hints;
+
+    // memset(&hints, 0, sizeof(hints));
+    // hints.ai_family = AF_UNSPEC;
+    // hints.ai_socktype = SOCK_STREAM;
+
+	// if (port == NULL)
+	// {
+		// // Fall back to default if port was not found in the configuration file
+		// printf("Warning! Port not sent to RTIS. Will use default port: %s", DEFAULT_PORT);
+
+	    // if ((res = getaddrinfo(ipAddress, DEFAULT_PORT, &hints, &resAddr)) != 0)
+	    // {
+	    	// fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(res));
+	    	// res = 2;
+	    // }
+	    // else
+	    // {
+	    	// // Because of inverted logic on return value
+	    	// res = 1;
+	    // }
+	// }
+	// else
+	// {
+	    // printf("Port: %s\n\n", port);
+	    // if ((res = getaddrinfo(ipAddress, port, &hints, &resAddr)) != 0)
+	    // {
+	    	// fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(res));
+	    	// res = 2;
+	    // }
+	    // else
+	    // {
+	    	// // Because of inverted logic on return value
+	    	// res = 1;
+	    // }
+	// }
+
+    // printf("IP addresses for %s:\n\n", ipAddress);
+
+    // struct addrinfo *p;
+    // char ipstr[INET6_ADDRSTRLEN];
+    // for(p = resAddr;p != NULL; p = p->ai_next) {
+        // void *addr;
+        // char *ipver;
+
+        // // get the pointer to the address itself,
+        // // different fields in IPv4 and IPv6:
+        // if (p->ai_family == AF_INET) { // IPv4
+            // struct sockaddr_in *ipv4 = (struct sockaddr_in *)p->ai_addr;
+            // addr = &(ipv4->sin_addr);
+            // ipver = "IPv4";
+        // } else { // IPv6
+            // struct sockaddr_in6 *ipv6 = (struct sockaddr_in6 *)p->ai_addr;
+            // addr = &(ipv6->sin6_addr);
+            // ipver = "IPv6";
+        // }
+
+        // // convert the IP to a string and print it:
+        // inet_ntop(p->ai_family, addr, ipstr, sizeof ipstr);
+        // printf("  %s: %s\n", ipver, ipstr);
+    // }
+
+
+    // if ((sClientFd = socket(resAddr->ai_family, resAddr->ai_socktype, resAddr->ai_protocol)) == -1) {
+        // perror("socket");
+        // exit(1);
+    // }
+// #endif
+
+    // printf("Trying to connect...\n");
+
+// #ifdef NPI_UNIX
+    // remote.sun_family = AF_UNIX;
+    // strcpy(remote.sun_path, ipAddress);
+    // len = strlen(remote.sun_path) + sizeof(remote.sun_family);
+    // if (connect(sClientFd, (struct sockaddr *)&remote, len) == -1) {
+        // perror("connect");
+        // res = 0;
+    // }
+// #else
+    // if (connect(sClientFd, resAddr->ai_addr, resAddr->ai_addrlen) == -1) {
+        // perror("connect");
+		// printf("\nThere is something wrong\n");
+        // res = 0;
+    // }
+// #endif
+
+    // if (res == 1) {
+		// printf("Connected.\n");
+	// }
+    	
+
+
+	// int no = 0;
+	// // allow out-of-band data
+	// if (setsockopt(sClientFd, SOL_SOCKET, SO_OOBINLINE, &no, sizeof(int)) == -1)
+	// {
+		// perror("setsockopt");
+		// res = 0;
+	// }
+
+	// /**********************************************************************
+	 // * Create thread which can read new messages from the NPI server
+	 // **********************************************************************/
+
+	// //printf("\n---------------Going to Create Thread rxThreadFunc------------------------\n");
+
+	// if (pthread_create(&RTISThreadId, NULL, rxThreadFunc, NULL))
+	// {
+		// // thread creation failed
+		// printf("Failed to create RTIS LNX IPC Client read thread\n");
+		// return -1;
+	// }
+
+	// /**********************************************************************
+	 // * Create thread which can handle new messages from the NPI server
+	 // **********************************************************************/
+
+	// //printf("\n---------------Going to Create Thread handleThreadFunc----------------------\n");
+	
+	// if (pthread_create(&RTISThreadId, NULL, handleThreadFunc, NULL))
+	// {
+		// // thread creation failed
+		// printf("Failed to create RTIS LNX IPC Client handle thread\n");
+		// return -1;
+	// }
+
+	// printf("\n\n[DBG] The RTISThreadId is %d\n\n",RTISThreadId);
+	
+	// return res;
+// }
+ 

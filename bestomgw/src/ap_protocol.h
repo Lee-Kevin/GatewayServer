@@ -142,6 +142,8 @@ typedef struct pdu_content pdu_content_t;
 #define TYPE_AP_REPORT_AP_INFO                   0x1006
 /*AP report device information to M1*/
 #define TYPE_AP_REPORT_DEV_INFO                  0x1007
+/*AP send HeartBeat packet to M1 */
+#define TYPE_AP_SEND_HEARTBEAT_INFO              0x100C
 
 /*write added device information */
 #define TYPE_ECHO_DEV_INFO                       0x4005
@@ -188,6 +190,7 @@ int sendAPinfotoServer(char *mac, int port);
 void AP_Protocol_init(sendDatatoServer_t sendfunc);
 int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu);
 int sendDevDatatoServer(pdu_content_t *devicepdu);
+int sendHeartBeattoServer(char * macAddr);
 
 
 #ifdef __cplusplus

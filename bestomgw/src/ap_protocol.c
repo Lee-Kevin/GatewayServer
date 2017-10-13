@@ -40,6 +40,11 @@ sFrame_head_t  *pFrame_Common = &Frame_Common;
 
 char *version[]={"1.0","1.1"};
 
+/*
+* Global variable
+*/
+extern pthread_cond_t heartBeatCond;
+extern pthread_mutex_t heartBeatMutex;
 
 
 /*
@@ -170,10 +175,32 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 	
 	switch(_frame_head.pdutype) {
 	/* 通用回复处理 */
-	case  TYPE_COMMON_RSP:  
-		// 心跳回复处理
-		debug_printf("[DBG] Got the ACK from Server and Doing Nothing now\n");
+	case  TYPE_COMMON_RSP: {
+		cJSON* snJson = NULL;
+		cJSON* pduTypeJson = NULL;
 		
+		snJson = cJSON_GetObjectItem(pJsondevData, "sn");
+		if(NULL == snJson){
+			printf("sn null\n");
+			return;
+		}
+		pduTypeJson = cJSON_GetObjectItem(pJsondevData, "pduType");
+		if(NULL == snJson){
+			printf("pduType null\n");
+			return;
+		}
+		/* 得到心跳包回复 */
+		if(pduTypeJson->valueint == TYPE_AP_SEND_HEARTBEAT_INFO) {
+			// 心跳回复处理
+			debug_printf("[DBG] Got the heart beat ACK from Server\n");
+			pthread_mutex_unlock(&heartBeatMutex);
+			pthread_cond_signal(&heartBeatCond);
+		} else {
+			debug_printf("[DBG] Got the ACK from Server and Doing Nothing now\n");
+		}
+		
+
+	} 
 		break;
 	/* AP 使能、失使能子设备入网 */	
 	case TYPE_DEV_NET_CONTROL:
@@ -544,6 +571,49 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 	//debug_printf("\n[DBG] After cJSON_Delete \n");
 	return PROTOCOL_OK;
 }
+
+
+/*********************************************************************
+ * @fn    sendHeartBeattoServer
+ *
+ * @brief 发送心跳包数据到Server
+ *
+ * @param mac, port
+ *
+ * @return
+ */
+
+ int sendHeartBeattoServer(char * macAddr) {
+	sFrame_head_t Frame_toSend;
+
+	//printf(">This is sendAPinfotoServer\n");
+    cJSON * pduJsonObject = NULL;
+    pduJsonObject = cJSON_CreateObject();
+    if(NULL == pduJsonObject)
+    {
+        // create object faild, exit
+        cJSON_Delete(pduJsonObject);
+        return PROTOCOL_FAILED;
+    }
+    /*add pdu type to pdu object*/
+    cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_AP_SEND_HEARTBEAT_INFO);
+	cJSON_AddStringToObject(pduJsonObject,"devData",macAddr);
+
+
+	Frame_toSend.sn         = 1;
+	Frame_toSend.version    = 0;
+	Frame_toSend.netflag    = NET_TYPE_WAN;
+	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
+	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
+	
+	//debug_printf("\n[DBG] before Frame_packet_send \n");
+	Frame_packet_send(&Frame_toSend);
+	//debug_printf("\n[DBG] After Frame_packet_send \n");
+	cJSON_Delete(pduJsonObject);
+	//debug_printf("\n[DBG] After cJSON_Delete \n");
+	return PROTOCOL_OK;
+}
+
 
 /*********************************************************************
  * @fn     DataWritetoDev

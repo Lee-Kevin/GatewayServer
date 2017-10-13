@@ -75,6 +75,8 @@ typedef struct ATTR_PACKED
 
 extern char mac[23];
 extern int localport;
+extern pthread_cond_t heartBeatCond;
+extern pthread_mutex_t heartBeatMutex;
 
 // typedef struct ATTR_PACKED
 // {
@@ -88,6 +90,7 @@ extern int localport;
 */
 typedef void (*socketClientCb_t)( msgData_t *msg ); 
 typedef void (*socketSendApinfo_t)(char *mac,int port); 
+typedef void (*socketHeartbeat_t)(char *mac);
 
 /**************************************************************************************************
  *                                        Global Variables

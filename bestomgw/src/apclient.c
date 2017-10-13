@@ -139,7 +139,7 @@ int main(int argc, char *argv[])
 	
 	/*初始化 socket*/
 	socketClientInit(str, socketClientCb,sendAPinfotoServer);
-	
+	heartBeatRegisterCallbackFun(sendHeartBeattoServer);
     // getClientLocalPort(&localport, &mac);
 	
 	printf("**** The MAC addr : %s, the port : %d ******\n",mac,localport);
