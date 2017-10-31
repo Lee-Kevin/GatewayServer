@@ -12,7 +12,8 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <sqlite3.h>
+//#include <sqlite3.h>
+#include "sqlite3.h"
 #include "socket_client.h"
 #include "ap_protocol.h"
 #include "interface_protocol.h"
@@ -32,10 +33,11 @@
 * 本地函数声明
 * 
 */
+static void UploadS2Data(uint8_t *data);
 static void UploadS4Data(uint8_t *data);
 static void UploadS5Data(uint8_t *data);
 
-
+static void test(uint8_t flag);
 
 static uint8_t allowNetFlag = 0;
 /*
@@ -67,44 +69,88 @@ void DealwithSerialData(uint8_t *data) {
 	}
 	
 	/**
-	* 记录设备信息并储存至数据库，并把设备名称和设备ID上传至M1
+	* 记录设备信息并储存至数据库，并把设备名称和设备ID上传至M1 允许入网后执行的操作
 	*/
-	if (allowNetFlag && (data[FRAME_CMD_DEV_ID] < 0x80)) {  // 过来的信息，是有关设备的数据
+	if (allowNetFlag && ((data[FRAME_CMD_DEV_ID] < 0x80) || ((data[FRAME_CMD_DEV_ID]>=0xC0) && (data[FRAME_CMD_DEV_ID] <= 0xCF))) ) {  // 过来的信息，是有关设备的数据
 		uint8_t result = 0;
+		uint16_t tempprdID = 0x0000;
 		sDevlist_info_t _devInfo;
 		pdu_content_t pdu_device_info;
-		char devID[23];
-		sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
-		for(uint8_t i=0; i<10; i++) {
-			sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+		char prdID[3];
+		char shortAddr[5];
+		char devID[17];
+		sprintf(prdID,"%02x",data[FRAME_CMD_DEV_ID]);  
+		prdID[2] = '\0';
+		
+		for(uint8_t i=0; i<2; i++) {
+			sprintf(shortAddr+2*i,"%02x",data[SHORT_ADDR_START+i]);
 		}
-		devID[22] = '\0';
+		shortAddr[4] = '\0';
+
 		switch(data[FRAME_CMD_DEV_ID]) {
-			case DEVICE_ID_S1:     _devInfo.devName = "s1";  break;
-			case DEVICE_ID_S4:     _devInfo.devName = "s4";  break;
-			case DEVICE_ID_RELAY:  _devInfo.devName = "s12"; break;
-			case DEVICE_ID_S3:     _devInfo.devName = "s3";  break;
-			case DEVICE_ID_S5:     _devInfo.devName = "s5";  break;
-			case DEVICE_ID_S6:     _devInfo.devName = "s6";  break;
+			case DEVICE_ID_S1:     sprintf(_devInfo.devName,"%s","s1");  break;
+			case DEVICE_ID_S2:     sprintf(_devInfo.devName,"%s","s2");  break;
+			case DEVICE_ID_S4:     sprintf(_devInfo.devName,"%s","s4");  break;
+			case DEVICE_ID_RELAY:  sprintf(_devInfo.devName,"%s","s12"); break;
+			case DEVICE_ID_S3:     sprintf(_devInfo.devName,"%s","s3");  break;
+			case DEVICE_ID_S5:     sprintf(_devInfo.devName,"%s","s5");  break;
+			case DEVICE_ID_S6:     sprintf(_devInfo.devName,"%s","s6");  break;
 			default: printf("\n[ERR] Unknow Device"); break;
 		}
-		_devInfo.devID 		= devID;
+		if(data[FRAME_CMD_DEV_ID] != DEVICE_ID_S2) {
+			for(uint8_t i=0; i<8; i++) {
+				sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
+			}
+			devID[16] = '\0';
+		} else {
+			for(uint8_t i=0; i<8; i++) {   // S2的帧结构有所不同 负载只有4字节
+				sprintf(devID+2*i,"%02x",data[PAYLOAD_START+5+i]);
+			}
+			devID[16] = '\0';
+		}
+
+		
+		
+		sprintf(_devInfo.prdID,"%s",prdID);
+		sprintf(_devInfo.shortAddr,"%s",shortAddr);
+		sprintf(_devInfo.devID,"%s",devID);
+		
+		// _devInfo.prdID      = prdID;
+		// _devInfo.shortAddr  = shortAddr;
+		// _devInfo.devID 		= devID;
 		_devInfo.status		= 1;
 		_devInfo.power      = 0;
-		_devInfo.note		= "Join the net work";
-		result = InsertDatatoDatabase(&_devInfo);
+		sprintf(_devInfo.note,"%s","Join the net work");
+		// _devInfo.note		= "Join the net work";
+		debug_printf("\n[DBG] Begin the InsertDatatoDatabase \n");
+		result = InsertDatatoDatabase(&_devInfo); // result 为true时，代表已经有数据
+		
 		if(!result) { // 插入数据库成功
-			//getClientLocalPort(&localport,&mac);
+			debug_printf("\n[DBG] Begin to getClientLocalPort \n");
+			getClientLocalPort(&localport,&mac);
+			
 			pdu_device_info.deviceName = _devInfo.devName;
 			pdu_device_info.deviceID   = _devInfo.devID;
+			switch(data[DEVICE_TYPE_ID]) {
+				case DEVICE_TYPE_DC_POWER:  tempprdID |= 0x8000; break;
+				case DEVICE_TYPE_LOW_POWER: tempprdID |= 0x4000; break;
+				case DEVICE_TYPE_NO_POWER:  tempprdID |= 0x4000; break;
+				default: break;
+			}
+			if (data[FRAME_CMD_DEV_ID]<0x17) {
+				tempprdID |= 0x1000;
+			} else {
+				tempprdID |= 0x2000;
+			}
+			pdu_device_info.prdID   = tempprdID | data[FRAME_CMD_DEV_ID];
 			pdu_device_info.paramNum   = 0;
 			pdu_device_info.param	   = NULL;
+			debug_printf("\n[DBG] Before sendDevinfotoServer \n");
 			sendDevinfotoServer(mac,localport,&pdu_device_info);
-			// sendDevinfotoServer("1234512345",11235,&pdu_device_info);
 		}
 	}
 	
-	switch(data[6]) {
+	switch(data[FRAME_CMD_TYPE_ID]) {
 	case CMD_TYPE_DEVICE_UPLOAD:
 		debug_printf("\n[DBG] CMD_TYPE_DEVICE_UPLOAD\n");
 		DealwithUploadData(data);
@@ -115,16 +161,16 @@ void DealwithSerialData(uint8_t *data) {
 			allowNetFlag = 0;
 			debug_printf("\n[DBG] Don't allow zigbee Net\n");
 		} else {      // 处理心跳包数据
-			char devID[23];
-			sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
-			for(uint8_t i=0; i<10; i++) {
-				sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+			char devID[17];
+			for(uint8_t i=0; i<8; i++) {
+				sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
 			}
-			devID[22] = '\0';
+			devID[16] = '\0';
 			sDevlist_info_t  _Devlist_info;
 			_Devlist_info.status = 1;
-			_Devlist_info.note   = "update online";
-			_Devlist_info.devID  = devID;
+			// _Devlist_info.note   = "update online";
+			sprintf(_Devlist_info.note,"%s","update online");
+			sprintf(_Devlist_info.devID,"%s",devID);
 			UpdateDevStatustoDatabase(&_Devlist_info);
 		}
 		break;
@@ -162,6 +208,7 @@ void DealwithAckData(uint8_t *data) {
 void DealwithUploadData(uint8_t *data) {
 	switch(data[FRAME_CMD_DEV_ID]) { // 区分具体设备
 		case DEVICE_ID_S1: UploadS1Data(data);  break;			// 人体红外  
+		case DEVICE_ID_S2: UploadS2Data(data);  break;			// 门磁
 		case DEVICE_ID_S3: UploadS3Data(data);  break;          // 有源面板
 		case DEVICE_ID_S4: UploadS4Data(data);  break;			// 温湿度
 		case DEVICE_ID_S5: UploadS5Data(data);	break;		    // 光照度
@@ -182,14 +229,13 @@ void DealwithUploadData(uint8_t *data) {
  * @return  无
  *************************************************************************************************/
 void UploadS1Data(uint8_t *data) {
-	char devID[23];
+	char devID[17];
     pdu_content_t _pdu_content;  
 	//pdu_content_t _pdu_content;
-	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
-	for(uint8_t i=0; i<10; i++) {
-		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	for(uint8_t i=0; i<8; i++) {
+		sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
 	}
-	devID[22] = '\0';
+	devID[16] = '\0';
 	
 	uint8_t PEOPLE_DATA = data[PAYLOAD_START];
 	
@@ -224,12 +270,95 @@ void UploadS1Data(uint8_t *data) {
 	sendDevDatatoServer(&_pdu_content);
 	debug_printf("\n[DBG] After sendDevDatatoServer\n");
 	
-	// sDevlist_info_t  _Devlist_info;
-	// _Devlist_info.status = 1;
+	//test(PEOPLE_DATA);
+	
+	sDevlist_info_t  _Devlist_info;
+	_Devlist_info.status = 1;
 	// _Devlist_info.note   = "update online";
-	// _Devlist_info.devID  = devID;
+	sprintf(_Devlist_info.note,"%s","update online");
+	sprintf(_Devlist_info.devID,"%s",devID);
+	UpdateDevStatustoDatabase(&_Devlist_info);
 	
 }
+
+void test(uint8_t flag) {
+	uSOC_packet_t ZocCmd_packet;
+	uint8_t devID;
+	ZocCmd_packet.frame.DeviceID    = 0x17;
+	ZocCmd_packet.frame.DeviceType  = 0x01;
+	memset(ZocCmd_packet.frame.payload,0,sizeof(ZocCmd_packet.frame.payload));
+	if(flag == 0xFF) {
+		ZocCmd_packet.frame.payload[0] = 0xfe;
+	} else {
+		ZocCmd_packet.frame.payload[0] = 0xff;
+	}
+
+	// memset(ZocCmd_packet.frame.shortAddr,0,sizeof(ZocCmd_packet.frame.shortAddr));
+	memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
+	ZocCmd_packet.frame.shortAddr[0] = 0xfb;
+	ZocCmd_packet.frame.shortAddr[1] = 0xf2;
+	zbSocSendCommand(&ZocCmd_packet);	
+}
+
+/*************************************************************************************************
+ * @fn      UploadS2Data()
+ *
+ * @brief   上传门磁信息至M1
+ *
+ * @param   串口传来的数据帧
+ *
+ * @return  无
+ *************************************************************************************************/
+void UploadS2Data(uint8_t *data) {
+	char devID[17];
+    pdu_content_t _pdu_content;  
+	//pdu_content_t _pdu_content;
+
+	for(uint8_t i=0; i<8; i++) {   // S2的帧结构有所不同 负载只有4字节
+		sprintf(devID+2*i,"%02x",data[PAYLOAD_START+5+i]);
+	}
+	
+	devID[16] = '\0';
+	
+	uint8_t DOOR_STATUS = data[PAYLOAD_START];
+	
+	float battery = data[PAYLOAD_START+3]*1.15*3/256;
+	if (battery<=1.8) battery = 1.8;
+	uint8_t precent = ((battery-1.8)/1.2)*100>100 ? 100 : (battery-1.8)/1.2*100;
+
+	
+	
+	_pdu_content.deviceName  = "s2";
+	_pdu_content.deviceID    = devID;
+	_pdu_content.paramNum    = 2;
+			
+    debug_printf("\n[DBG] the device ID is %s\n",devID);
+	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
+	devparam_t newdevParam[_pdu_content.paramNum];
+	newdevParam[0].type = PARAM_TYPE_S2_DOORSTATUS;
+	if(DOOR_STATUS == 0x01 ) {
+		newdevParam[0].value = 1;  // 门窗开启
+	} else {
+		newdevParam[0].value = 0;  // 门窗关闭
+	}
+	
+	newdevParam[0].next	 	 = &newdevParam[1];
+	newdevParam[1].type      = PARAM_TYPE_POWER_STATUS;
+	newdevParam[1].value     = precent;
+	newdevParam[1].next	 	 = NULL;
+	_pdu_content.param        =  &newdevParam[0];		
+	sendDevDatatoServer(&_pdu_content);
+	debug_printf("\n[DBG] After sendDevDatatoServer\n");
+	
+	sDevlist_info_t  _Devlist_info;
+	_Devlist_info.status = 1;
+	// _Devlist_info.note   = "update online";
+	sprintf(_Devlist_info.note,"%s","update online");
+	sprintf(_Devlist_info.devID,"%s",devID);
+	UpdateDevStatustoDatabase(&_Devlist_info);
+}
+
+
 
 /*************************************************************************************************
  * @fn      UploadS3Data()
@@ -241,14 +370,13 @@ void UploadS1Data(uint8_t *data) {
  * @return  无
  *************************************************************************************************/
 void UploadS3Data(uint8_t *data) {
-	char devID[23];
+	char devID[17];
     pdu_content_t _pdu_content;  
 	//pdu_content_t _pdu_content;
-	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
-	for(uint8_t i=0; i<10; i++) {
-		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	for(uint8_t i=0; i<8; i++) {
+		sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
 	}
-	devID[22] = '\0';
+	devID[16] = '\0';
 	
 	uint8_t KEY_DATA = data[PAYLOAD_START];
 	float battery = data[PAYLOAD_START+9]*1.15*3/256;
@@ -283,10 +411,12 @@ void UploadS3Data(uint8_t *data) {
 	sendDevDatatoServer(&_pdu_content);
 	debug_printf("\n[DBG] After sendDevDatatoServer\n");
 	
-	// sDevlist_info_t  _Devlist_info;
-	// _Devlist_info.status = 1;
+	sDevlist_info_t  _Devlist_info;
+	_Devlist_info.status = 1;
 	// _Devlist_info.note   = "update online";
-	// _Devlist_info.devID  = devID;
+	sprintf(_Devlist_info.note,"%s","update online");
+	sprintf(_Devlist_info.devID,"%s",devID);
+	UpdateDevStatustoDatabase(&_Devlist_info);
 	
 }
 
@@ -300,15 +430,13 @@ void UploadS3Data(uint8_t *data) {
  * @return  无
  *************************************************************************************************/
 void UploadS5Data(uint8_t *data) {
-	char devID[23];
+	char devID[17];
 	float param = 0.319; // 太阳光 0.282 荧光灯 0.146
     pdu_content_t _pdu_content;  
-	//pdu_content_t _pdu_content;
-	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
-	for(uint8_t i=0; i<10; i++) {
-		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	for(uint8_t i=0; i<8; i++) {
+		sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
 	}
-	devID[22] = '\0';
+	devID[16] = '\0';
 	
 	uint16_t LIGHT_DATA = data[PAYLOAD_START+1]*256 + data[PAYLOAD_START];
 	float lux = LIGHT_DATA/param;
@@ -341,11 +469,12 @@ void UploadS5Data(uint8_t *data) {
 	sendDevDatatoServer(&_pdu_content);
 	debug_printf("\n[DBG] After sendDevDatatoServer\n");
 	
-	// sDevlist_info_t  _Devlist_info;
-	// _Devlist_info.status = 1;
+	sDevlist_info_t  _Devlist_info;
+	_Devlist_info.status = 1;
 	// _Devlist_info.note   = "update online";
-	// _Devlist_info.devID  = devID;
-	
+	sprintf(_Devlist_info.note,"%s","update online");
+	sprintf(_Devlist_info.devID,"%s",devID);
+	UpdateDevStatustoDatabase(&_Devlist_info);
 }
 
 
@@ -360,15 +489,13 @@ void UploadS5Data(uint8_t *data) {
  * @return  无
  *************************************************************************************************/
 void UploadS4Data(uint8_t *data) {
-	char devID[23];
+	char devID[17];
     pdu_content_t _pdu_content;  
 	//pdu_content_t _pdu_content;
-	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
-	for(uint8_t i=0; i<10; i++) {
-		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	for(uint8_t i=0; i<8; i++) {
+		sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
 	}
-	devID[22] = '\0';
-		
+	devID[16] = '\0';
 	uint16_t TM_DATA = data[PAYLOAD_START]*256 + data[PAYLOAD_START+1];
 	float temp = ((175.72*TM_DATA)/65536) - 46.85;
 	uint16_t RH_DATA = (data[PAYLOAD_START+2]<<8) + data[PAYLOAD_START+3];
@@ -408,10 +535,12 @@ void UploadS4Data(uint8_t *data) {
 	sendDevDatatoServer(&_pdu_content);
 	debug_printf("\n[DBG] After sendDevDatatoServer\n");
 	
-	// sDevlist_info_t  _Devlist_info;
-	// _Devlist_info.status = 1;
+	sDevlist_info_t  _Devlist_info;
+	_Devlist_info.status = 1;
 	// _Devlist_info.note   = "update online";
-	// _Devlist_info.devID  = devID;
+	sprintf(_Devlist_info.note,"%s","update online");
+	sprintf(_Devlist_info.devID,"%s",devID);
+	UpdateDevStatustoDatabase(&_Devlist_info);
 	
 }
 
@@ -425,14 +554,12 @@ void UploadS4Data(uint8_t *data) {
  * @return  无
  *************************************************************************************************/
 void UploadS12Data(uint8_t *data) {
-	char devID[23];
+	char devID[17];
     pdu_content_t _pdu_content;  
-	//pdu_content_t _pdu_content;
-	sprintf(devID,"%02x",data[FRAME_CMD_DEV_ID]);
-	for(uint8_t i=0; i<10; i++) {
-		sprintf(devID+2+2*i,"%02x",data[SHORT_ADDR_START+i]);
+	for(uint8_t i=0; i<8; i++) {
+		sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
 	}
-	devID[22] = '\0';
+	devID[16] = '\0';
 	
 	uint8_t STATUS_DATA = data[PAYLOAD_START];
 	
@@ -467,10 +594,12 @@ void UploadS12Data(uint8_t *data) {
 	sendDevDatatoServer(&_pdu_content);
 	debug_printf("\n[DBG] After sendDevDatatoServer\n");
 	
-	// sDevlist_info_t  _Devlist_info;
-	// _Devlist_info.status = 1;
+	sDevlist_info_t  _Devlist_info;
+	_Devlist_info.status = 1;
 	// _Devlist_info.note   = "update online";
-	// _Devlist_info.devID  = devID;
+	sprintf(_Devlist_info.note,"%s","update online");
+	sprintf(_Devlist_info.devID,"%s",devID);
+	UpdateDevStatustoDatabase(&_Devlist_info);
 	
 }
 

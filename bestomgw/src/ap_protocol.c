@@ -19,6 +19,7 @@
 #include <unistd.h>
 #include "cJSON.h"
 #include "zbSocCmd.h"
+#include "database.h"
 
 #define __BIG_DEBUG__
 
@@ -198,8 +199,6 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 		} else {
 			debug_printf("[DBG] Got the ACK from Server and Doing Nothing now\n");
 		}
-		
-
 	} 
 		break;
 	/* AP 使能、失使能子设备入网 */	
@@ -323,9 +322,10 @@ int sendAPinfotoServer(char *mac, int port) {
         return PROTOCOL_FAILED;
 	}
 	cJSON_AddItemToObject(pduJsonObject,"devData",devDataObject);
-	cJSON_AddNumberToObject(devDataObject,"port", port);
-	cJSON_AddStringToObject(devDataObject,"apId", mac);
+	cJSON_AddNumberToObject(devDataObject,"pID", AP_ID);
 	cJSON_AddStringToObject(devDataObject,"apName",APNAME);
+	cJSON_AddStringToObject(devDataObject,"apId", mac);
+
 	
 	//char * p = cJSON_Print(pJsonRoot);
 	
@@ -418,7 +418,7 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 
 	sFrame_head_t Frame_toSend;
 	pdu_content_t _content_toSend = *devicepdu;
-	//printf(">This is sendAPinfotoServer\n");
+	debug_printf(">This is sendAPinfotoServer\n");
     cJSON * pduJsonObject = NULL;
     cJSON * devDataJsonArray = NULL;
     cJSON * devDataObject= NULL;
@@ -442,9 +442,9 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
         return PROTOCOL_FAILED;
 	}
 	cJSON_AddItemToObject(pduJsonObject,"devData",devDataObject);
-	cJSON_AddNumberToObject(devDataObject,"port", port);
-	cJSON_AddStringToObject(devDataObject,"apId", mac);
+	// cJSON_AddNumberToObject(devDataObject,"port", port);
 	cJSON_AddStringToObject(devDataObject,"apName",APNAME);
+	cJSON_AddStringToObject(devDataObject,"apId", mac);
 	
 	devDataJsonArray = cJSON_CreateArray();
 	if (NULL == devDataJsonArray) {
@@ -458,6 +458,7 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 			cJSON_Delete(arrayObject);
 			return PROTOCOL_FAILED;
 		}
+		cJSON_AddNumberToObject(arrayObject,"pId",_content_toSend.prdID);
 		cJSON_AddStringToObject(arrayObject,"devId",_content_toSend.deviceID);
 		cJSON_AddStringToObject(arrayObject,"devName", _content_toSend.deviceName);			
 
@@ -471,7 +472,7 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 	Frame_toSend.netflag    = NET_TYPE_WAN;
 	Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
 	Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
-	
+	debug_printf("\n[DBG] Before the  Frame_packet_send \n");
 	Frame_packet_send(&Frame_toSend);
 	cJSON_Delete(pduJsonObject);
 	return PROTOCOL_OK;
@@ -630,8 +631,14 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 	uSOC_packet_t ZocCmd_packet;
 	uint8_t devID;
 	uint32_t value = DatatoWrite.value;
+	sDevlist_info_t mydevinfo;
+	/* 在此获得短地址及设备类型ID */
 	
-	sscanf(DatatoWrite.devId,"%02x",&devID);  // 设备ID
+	// sscanf(DatatoWrite.devId,"%02x",&devID);  // 设备ID
+	
+	GetDevInfofromDatabase(DatatoWrite.devId,&mydevinfo);  // 用设备的唯一ID去获得 产品ID及短地址
+	
+	sscanf(mydevinfo.prdID,"%02x",&devID);
 	
 	ZocCmd_packet.frame.DeviceID    = devID;
 	ZocCmd_packet.frame.DeviceType  = 0x01;
@@ -682,11 +689,11 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 	memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
 	
 	for (uint8_t i=0; i<2; i++) {
-		sscanf(DatatoWrite.devId+2+2*i,"%02x",ZocCmd_packet.frame.shortAddr+i);
+		sscanf(mydevinfo.shortAddr+2*i,"%02x",ZocCmd_packet.frame.shortAddr+i);
 	}	
 	//memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
 	zbSocSendCommand(&ZocCmd_packet);
-	usleep(500000);
+	usleep(200000);
 	printf("\n[DBG] End of sleep\n");
 	
 }

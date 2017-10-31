@@ -90,6 +90,7 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 #define CMD_TYPE_DEVICE_ACK		      0x04
 
 #define DEVICE_ID_S1        		  0x07
+#define DEVICE_ID_S2        		  0x05
 #define DEVICE_ID_S3        		  0x14
 #define DEVICE_ID_S4     		      0x01
 #define DEVICE_ID_S5     		      0x08
@@ -100,9 +101,16 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 // 允许组网命令
 #define CMD_ID_ALLOW_NETWORK          0xFD
 
+#define FRAME_CMD_TYPE_ID			  6
 #define FRAME_CMD_DEV_ID              8
+#define  DEVICE_TYPE_ID                (FRAME_CMD_DEV_ID + 1)
 #define PAYLOAD_START			      10
 #define SHORT_ADDR_START			  21
+
+// 定义设备编码
+#define DEVICE_TYPE_DC_POWER		  0x01
+#define DEVICE_TYPE_LOW_POWER		  0x02
+#define DEVICE_TYPE_NO_POWER          0x03
 
 // ZLL Soc Types
 typedef enum

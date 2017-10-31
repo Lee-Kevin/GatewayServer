@@ -110,7 +110,7 @@ pthread_mutex_t clientRxMutex = PTHREAD_MUTEX_INITIALIZER;
 // There are variables about the heartbeat
 
 #define HeartBeatTimeOut           2
-#define HeartBeatTimeInterval      10
+#define HeartBeatTimeInterval      60
 #define HeartBeatTimeOutCount      2
 pthread_cond_t heartBeatCond;
 pthread_mutex_t heartBeatMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -132,7 +132,7 @@ socketHeartbeat_t socketHeartbeatFun;
 static void initSyncRes(void);
 static void delSyncRes(void);
 
-
+/* 注册发送心跳包的调用函数 */
 
 void heartBeatRegisterCallbackFun(socketHeartbeat_t heartbeatfun) {
 	socketHeartbeatFun = heartbeatfun;
@@ -376,8 +376,9 @@ static void *heartBeatThreadFunc (void *ptr) {
 				timeout.tv_sec = temp.tv_sec + HeartBeatTimeOut;
 				if (ETIMEDOUT == pthread_cond_timedwait(&heartBeatCond,&heartBeatMutex,&timeout)) {
 					if (++timeoutCount >= HeartBeatTimeOutCount) {
-						SocketErrFlag = 1;
-						break;
+						// 超时处理
+						// SocketErrFlag = 1;
+						// break;
 					}
 					
 					debug_printf("[DBG] HeartBeatTimeOut \n");

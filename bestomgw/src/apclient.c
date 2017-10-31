@@ -72,7 +72,7 @@ int main(int argc, char *argv[])
 	char str[22];
 	int zbSoc_fd;
 	char dbFilename[MAX_DB_FILENAMR_LEN];
-	
+	sDevlist_info_t mydevinfo;
 	printf("%s -- %s %s\n", argv[0], __DATE__, __TIME__);
 	
 	/* 
@@ -156,11 +156,15 @@ int main(int argc, char *argv[])
 		char chartemp[10];
 		printf("> Please input the data number:\n>");
 	    scanf("%s",chartemp);
-		if(strcmp("2.1.1",chartemp) == 0) {
-			printf("\n Send device data to server\n");
+		if(strcmp("opennet",chartemp) == 0) {
+			printf("\n Open the zigbee network\n");
+			zbSocOpenNwk(20);
 			//sendDevDatatoServer();
-		} else if (strcmp("2.1.2",chartemp) == 0) {
+		} else if (strcmp("sqlite",chartemp) == 0) {
 			printf("\n Send device info to server\n");
+			GetDevInfofromDatabase("e75f6414004b1200",&mydevinfo);
+			printf("\nThe shortAddr is %s the prdID is %s\n",mydevinfo.shortAddr,mydevinfo.prdID);
+			
 			// sendDevinfotoServer(mac, localport);
 		} else if (strcmp("start",chartemp) == 0){
 			while(1) {

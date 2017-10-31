@@ -87,11 +87,14 @@ typedef struct devparam devparam_t;
 struct pdu_content {
 	char* deviceName;
 	char* deviceID;
+	uint16_t prdID;
 	uint8_t paramNum;
 	devparam_t *param;
 };
 typedef struct pdu_content pdu_content_t;
 
+/* 定义AP ID */
+#define AP_ID                                    0x00FE
 
 /*******************************************************************************
  网络标识类型定义
@@ -163,6 +166,7 @@ typedef struct pdu_content pdu_content_t;
 #define PARAM_TYPE_S1_LIGHT 					 0x4015
 #define PARAM_TYPE_S1_DEFUSING					 0x4016
 
+#define PARAM_TYPE_S2_DOORSTATUS				 0x4005
 
 #define PARAM_TYPE_S3_KEY1						 0x4009
 #define PARAM_TYPE_S3_KEY2						 0x400A

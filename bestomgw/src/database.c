@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <string.h>
-#include <sqlite3.h>
+#include "sqlite3.h"
 #include "socket_client.h"
 #include "ap_protocol.h"
 #include "database.h"
@@ -25,6 +25,7 @@
 #define debug_printf(fmt, ...)
 #endif
 
+static uint8_t UpdateShortAddrtoDatabase(sDevlist_info_t * devInfo);
 static uint8_t CheckIfDataRepeat(sDevlist_info_t * devInfo);
 static uint8_t check_Database(char * databaseName);
 static int create_DatabaseTable(sqlite3 *db);
@@ -54,18 +55,21 @@ void APDatabaseInit(char * database) {
  * @fn     InsertDatatoDatabase
  *
  * @brief  插入数据
- 	 "CREATE TABLE Devlist( \
-		1	   ID INT PRIMARY KEY           NOT NULL,\
-		2	   DeviceId           TEXT      NOT NULL,\
-		3	   DeviceName         TEXT      NOT NULL,\
-		4	   DeviceStatus       INT       NOT NULL,\
-		5	   Power              INT,                \
-		6	   Note               TEXT ,\
-		7	   TIME            TEXT);"
+	"CREATE TABLE Devlist( \
+		1			   ID  INTEGER PRIMARY KEY AUTOINCREMENT    NOT NULL,\
+		2			   DeviceName         TEXT      NOT NULL, \
+		3			   ProductId          TEXT      NOT NULL, \
+		4			   ShortAddr          TEXT      NOT NULL, \
+		5			   DeviceId           TEXT      NOT NULL, \
+		6			   DeviceStatus       INT       NOT NULL, \
+		7			   Power              INT,                \
+		8			   Note          TEXT,  \
+		9		       TIME TEXT);";
+		
  *
  * @param  数据库名称, devInfo
  *
- * @return
+ * @return true 代表已经有数据，插入失败, 0代表以前没有数据，插入成功
  */
 uint8_t InsertDatatoDatabase(sDevlist_info_t * devInfo) {
 	sDevlist_info_t _devInfo = *devInfo;
@@ -77,9 +81,10 @@ uint8_t InsertDatatoDatabase(sDevlist_info_t * devInfo) {
 	if(CheckIfDataRepeat(&_devInfo)) {
 		debug_printf("\n[DBG] The Database already have the data\n",rc);
 		ifRepeat = 1;
+		UpdateShortAddrtoDatabase(&_devInfo);  // 如果数据重复，更新短地址信息
 	} else {
 
-		char *sql = "INSERT INTO Devlist(ID, DeviceId,DeviceName,DeviceStatus,Power,Note,TIME) values(?,?,?,?,?,?,datetime('now','localtime'));";
+		char *sql = "INSERT INTO Devlist(ID,DeviceName,ProductId,ShortAddr,DeviceId,DeviceStatus,Power,Note,TIME) values(?,?,?,?,?,?,?,?,datetime('now','localtime'));";
 		rc = sqlite3_open(databaseName, &db);  
 		if(rc){  
 			fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));   
@@ -88,23 +93,101 @@ uint8_t InsertDatatoDatabase(sDevlist_info_t * devInfo) {
 		}
 		sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL);              /* 将sql命令 转存至stmt 结构体之中 */
 	 //   sqlite3_bind_int(stmt,1, NULL);                                   /* ID 每执行一次插入动作，会自动增加 */
-		sqlite3_bind_text(stmt, 2, _devInfo.devID, -1, NULL);
-		sqlite3_bind_text(stmt, 3, _devInfo.devName, -1, NULL);
-		sqlite3_bind_int(stmt, 4, _devInfo.status);
-		sqlite3_bind_int(stmt, 5, _devInfo.power);
-		sqlite3_bind_text(stmt, 6, _devInfo.note, -1, NULL);
+		sqlite3_bind_text(stmt, 2, _devInfo.devName, -1, NULL);
+		sqlite3_bind_text(stmt, 3, _devInfo.prdID, -1, NULL);
+		sqlite3_bind_text(stmt, 4, _devInfo.shortAddr,-1,NULL);
+		sqlite3_bind_text(stmt, 5, _devInfo.devID, -1, NULL);
+		sqlite3_bind_int(stmt,  6, _devInfo.status);
+		sqlite3_bind_int(stmt,  7, _devInfo.power);
+		sqlite3_bind_text(stmt, 8, _devInfo.note, -1, NULL);
 
 		rc = sqlite3_step(stmt);                                         /* 将上述字符串传递至虚拟引擎 */
 		if (rc != SQLITE_DONE) {
 			debug_printf("[DBG] Cann't insert the data to the database, Error code :%d\n",rc);
 		}
-		debug_printf("[DBG] Insert the data to the database\n");
+		
 		sqlite3_finalize(stmt);
 		sqlite3_close(db); 
-		return ifRepeat;
+		debug_printf("[DBG] Insert the data to the database\n");
+
 	}
-	
+	return ifRepeat;
 }
+
+/*********************************************************************
+ * @fn     GetDevInfofromDatabase
+ *
+ * @brief  获取数据
+	"CREATE TABLE Devlist( \
+		1			   ID  INTEGER PRIMARY KEY AUTOINCREMENT    NOT NULL,\
+		2			   DeviceName         TEXT      NOT NULL, \
+		3			   ProductId          TEXT      NOT NULL, \
+		4			   ShortAddr          TEXT      NOT NULL, \
+		5			   DeviceId           TEXT      NOT NULL, \
+		6			   DeviceStatus       INT       NOT NULL, \
+		7			   Power              INT,                \
+		8			   Note          TEXT,  \
+		9		       TIME TEXT);";
+		
+ *
+ * @param  数据库名称, devInfo
+ *
+ * @return true 代表读取数据失败, 0代表读取数据成功
+ */
+uint8_t GetDevInfofromDatabase(char *DevId, sDevlist_info_t * devInfo) {
+	int rc;
+	
+	sqlite3* db = NULL;
+	sqlite3_stmt* stmt = NULL;
+
+	char *sql = "SELECT * FROM Devlist WHERE DeviceId = ?";
+	rc = sqlite3_open(databaseName, &db);  
+	if(rc){  
+		fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));   
+	}else{  
+		fprintf(stderr, "InsertDatatoDatabase Opened database successfully\n");  
+	}
+	sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL);              /* 将sql命令 转存至stmt 结构体之中 */
+	sqlite3_bind_text(stmt, 1, DevId, -1, NULL);
+	
+	while(sqlite3_step(stmt) != SQLITE_DONE) {
+		int num_cols = sqlite3_column_count(stmt);
+		for (uint8_t i = 0; i < num_cols; i++)
+		{
+			if (i==2) {
+				sprintf(devInfo->prdID,"%s",sqlite3_column_text(stmt, i));
+				// *devInfo.prdID = sqlite3_column_text(stmt, i);
+			} else if (i==3) {
+				sprintf(devInfo->shortAddr,"%s",sqlite3_column_text(stmt, i));
+				// *devInfo.shortAddr = sqlite3_column_text(stmt, i);
+			} else {
+				
+			}
+			switch (sqlite3_column_type(stmt, i))
+			{
+			case (SQLITE3_TEXT):
+				printf("%d %s, ", i,sqlite3_column_text(stmt, i));
+				break;
+			case (SQLITE_INTEGER):
+				printf("%d,%d, ",i, sqlite3_column_int(stmt, i));
+				break;
+			case (SQLITE_FLOAT):
+				printf("%d, %g, ", i,sqlite3_column_double(stmt, i));
+				break;
+			default:
+				break;
+			}
+		}
+		debug_printf("\n[DBG] The num_cols is %d",num_cols);
+	}
+
+	sqlite3_finalize(stmt);
+	sqlite3_close(db); 
+	debug_printf("[DBG] Insert the data to the database\n");
+
+	return rc;
+}
+
 
  /*********************************************************************
  * @fn     UpdateDevStatustoDatabase
@@ -127,7 +210,7 @@ uint8_t UpdateDevStatustoDatabase(sDevlist_info_t * devInfo) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));  
         return rc;  
     }else{  
-        fprintf(stderr, "Opened database successfully\n");  
+        fprintf(stderr, "UpdateDevStatustoDatabase Opened database successfully\n");  
     }
 	
 	sprintf(sql,"UPDATE Devlist SET DeviceStatus = %d, \
@@ -169,7 +252,7 @@ uint8_t UpdateDatatoDatabase(sDevlist_info_t * devInfo) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));  
         return rc;  
     }else{  
-        fprintf(stderr, "Opened database successfully\n");  
+        fprintf(stderr, "UpdateDatatoDatabase Opened database successfully\n");  
     }
 	
 	sprintf(sql,"UPDATE Devlist SET DeviceStatus = %d, \
@@ -186,6 +269,46 @@ uint8_t UpdateDatatoDatabase(sDevlist_info_t * devInfo) {
     }
 	debug_printf("[DBG] THE SQL IS %s\n",sql);
 	debug_printf("[DBG] Update data to database successfully\n");
+    sqlite3_close(db);
+	return rc;
+}
+
+ /*********************************************************************
+ * @fn     UpdateShortAddrtoDatabase
+ *			
+ * @brief  更新子设备的短地址，每次重新入网，短地址可能会发生变化，需要重新刷新
+ *
+ * @param  数据库名称, devInfo
+ *
+ * @return
+ */
+uint8_t UpdateShortAddrtoDatabase(sDevlist_info_t * devInfo) {
+	
+	sDevlist_info_t _devInfo = *devInfo;
+	int rc;
+    sqlite3* db = NULL;
+	char* err_msg = NULL;
+	char sql[255];
+    rc = sqlite3_open(databaseName, &db);  
+    if(rc){  
+        fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));  
+        return rc;  
+    }else{  
+        fprintf(stderr, "UpdateShortAddrtoDatabase Opened database successfully\n");  
+    }
+	
+	sprintf(sql,"UPDATE Devlist SET ShortAddr = '%s', \
+	                    TIME = datetime('now','localtime') \
+						WHERE DeviceId = '%s'",_devInfo.shortAddr, _devInfo.devID);
+	
+	rc = sqlite3_exec(db, sql, NULL, 0, &err_msg);
+	
+    if(rc != SQLITE_OK) {
+        printf("SQL error:%s\n",err_msg);
+        sqlite3_free(err_msg);
+    }
+	debug_printf("[DBG] THE SQL IS %s\n",sql);
+	debug_printf("[DBG] Update shortAddr to database successfully\n");
     sqlite3_close(db);
 	return rc;
 }
@@ -211,7 +334,7 @@ uint8_t check_Database(char* databaseName) {
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));  
 		return rc;
     }else{  
-        fprintf(stderr, "Opened database successfully\n");  
+        fprintf(stderr, "check_Database Opened database successfully\n");  
     }
 	rc = check_DatabaseTable(db);
 	if (rc != SQLITE_OK) {
@@ -251,8 +374,10 @@ int create_DatabaseTable(sqlite3 * db) {
 	char *zErrMsg = 0;
 	char *sql =  "CREATE TABLE Devlist( \
 					   ID  INTEGER PRIMARY KEY AUTOINCREMENT    NOT NULL,\
-					   DeviceId           TEXT      NOT NULL, \
 					   DeviceName         TEXT      NOT NULL, \
+					   ProductId          TEXT      NOT NULL, \
+					   ShortAddr          TEXT      NOT NULL, \
+					   DeviceId           TEXT      NOT NULL, \
 					   DeviceStatus       INT       NOT NULL, \
 					   Power              INT,                \
 					   Note          TEXT,  \
@@ -267,14 +392,17 @@ int create_DatabaseTable(sqlite3 * db) {
  * @fn     CheckIfDataRepeat
  *
  * @brief  插入数据
- 	 "CREATE TABLE Devlist( \
-		1	   ID INT PRIMARY KEY           NOT NULL,\
-		2	   DeviceId           TEXT      NOT NULL,\
-		3	   DeviceName         TEXT      NOT NULL,\
-		4	   DeviceStatus       INT       NOT NULL,\
-		5	   Power              INT,                \
-		6	   Note               TEXT ,\
-		7	   TIME            TEXT);"
+	"CREATE TABLE Devlist( \
+		1			   ID  INTEGER PRIMARY KEY AUTOINCREMENT    NOT NULL,\
+		2			   DeviceName         TEXT      NOT NULL, \
+		3			   ProductId          TEXT      NOT NULL, \
+		4			   ShortAddr          TEXT      NOT NULL, \
+		5			   DeviceId           TEXT      NOT NULL, \
+		6			   DeviceStatus       INT       NOT NULL, \
+		7			   Power              INT,                \
+		8			   Note          TEXT,  \
+		9		       TIME TEXT);";
+		
  *
  * @param  数据库名称, devInfo
  *
@@ -292,22 +420,23 @@ static uint8_t CheckIfDataRepeat(sDevlist_info_t * devInfo) {
     rc = sqlite3_open(databaseName, &db);  
     if(rc){  
         fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));  
-        return rc;  
+        // return rc;  
     }else{  
-        fprintf(stderr, "Opened database successfully\n");  
+        fprintf(stderr, "CheckIfDataRepeat Opened database successfully\n");  
     }
     sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL);              /* 将sql命令 转存至stmt 结构体之中 */
 	sqlite3_bind_text(stmt, 1, _devInfo.devID, -1, NULL);
-	//debug_printf("[DBG] Before sqlite3_step \n");
+	// debug_printf("[DBG] Before sqlite3_step \n");
 	while(sqlite3_step(stmt) != SQLITE_DONE) {
 		int num_cols = sqlite3_column_count(stmt);
-		if(num_cols == 7) {
+		if(num_cols == 9) {
 			ifRepeat = 1;
 		}
 		debug_printf("\n[DBG] The num_cols is %d",num_cols);
 	}
-	//debug_printf("[DBG] CheckIfDataRepeat Done \n");
+	debug_printf("[DBG] CheckIfDataRepeat Done \n");
     sqlite3_finalize(stmt);
+
     sqlite3_close(db); 
 	return ifRepeat;
 	
