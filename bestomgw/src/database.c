@@ -79,7 +79,7 @@ uint8_t InsertDatatoDatabase(sDevlist_info_t * devInfo) {
 	sqlite3_stmt* stmt = NULL;
 	/* 判断数据是否重复 */
 	if(CheckIfDataRepeat(&_devInfo)) {
-		debug_printf("\n[DBG] The Database already have the data\n",rc);
+		debug_printf("\n[DBG] The Database already have the data\n");
 		ifRepeat = 1;
 		UpdateShortAddrtoDatabase(&_devInfo);  // 如果数据重复，更新短地址信息
 	} else {
@@ -113,6 +113,7 @@ uint8_t InsertDatatoDatabase(sDevlist_info_t * devInfo) {
 	}
 	return ifRepeat;
 }
+
 
 /*********************************************************************
  * @fn     GetDevInfofromDatabase
@@ -160,6 +161,8 @@ uint8_t GetDevInfofromDatabase(char *DevId, sDevlist_info_t * devInfo) {
 			} else if (i==3) {
 				sprintf(devInfo->shortAddr,"%s",sqlite3_column_text(stmt, i));
 				// *devInfo.shortAddr = sqlite3_column_text(stmt, i);
+			} else if (i==5) {
+				devInfo->status = sqlite3_column_int(stmt, i);
 			} else {
 				
 			}

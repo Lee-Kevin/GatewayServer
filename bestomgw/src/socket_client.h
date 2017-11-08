@@ -91,7 +91,7 @@ extern pthread_mutex_t heartBeatMutex;
 typedef void (*socketClientCb_t)( msgData_t *msg ); 
 typedef void (*socketSendApinfo_t)(char *mac,int port); 
 typedef void (*socketHeartbeat_t)(char *mac);
-
+typedef uint8_t (*socketSendStatus_t)(void);
 /**************************************************************************************************
  *                                        Global Variables
  **************************************************************************************************/
@@ -168,6 +168,7 @@ void socketClientSendData (msgData_t *pMsg);
 
 void getClientLocalPort(int *port, char **macaddr);
 
+void sendStatusRegisterCallbackFun(socketSendStatus_t sendsatausfun);
 
 #ifdef __cplusplus
 }

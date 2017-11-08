@@ -461,6 +461,7 @@ static void *ZOCrxThreadFunc (void *ptr) {
 					tail += nread;
 					// printf("[DBG] **the tail is %d\n",tail);
 					if(tail >= dlen) { 
+						// printf("\n[DBG], the data len is %d\n",dlen);
 						if( checkRead(data, dlen) ) {
 							debug_printf("[DBG] Pass the checkRead \n");
 							ZOClinkedMsg_t *newMessage = (ZOClinkedMsg_t *) malloc(sizeof(ZOClinkedMsg_t));
@@ -1238,7 +1239,6 @@ uint8_t checkRead(uint8_t *data, uint16_t len) {
 	for (uint16_t i=0; i<len-2; i++) {
 		sum += data[i];
 	}
-	printf("[DBG] 3the checkdata should be is %x \n", sum&255);
 	if ( (uint8_t)(sum&0xff) == data[len-1] ) {
 		return 1;
 	} else {

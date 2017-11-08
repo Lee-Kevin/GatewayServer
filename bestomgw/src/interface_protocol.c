@@ -62,12 +62,13 @@ extern int localport;
 
 
 void DealwithSerialData(uint8_t *data) {
+	uint8_t OFFSET = 0;
 	printf("\nThis is DealwithSerialData\n ");
 	debug_printf("[DBG] The data recived is:\n");
 	for (int j=0; j<data[2]; j++) {
 		debug_printf("%02x ",data[j]);
 	}
-	
+	OFFSET = data[2] - 0x20;  // 当遇到长度可变字节时，负载后面的字段，需要增加偏移量
 	/**
 	* 记录设备信息并储存至数据库，并把设备名称和设备ID上传至M1 允许入网后执行的操作
 	*/
@@ -79,11 +80,15 @@ void DealwithSerialData(uint8_t *data) {
 		char prdID[3];
 		char shortAddr[5];
 		char devID[17];
-		sprintf(prdID,"%02x",data[FRAME_CMD_DEV_ID]);  
+		if(data[FRAME_CMD_DEV_ID] == DEVICE_ID_UART) {
+			sprintf(prdID,"%02x",data[FRAME_CMD_DEV_ID]);  
+		} else {
+			sprintf(prdID,"%02x",0xc0); 
+		}
 		prdID[2] = '\0';
-		
+
 		for(uint8_t i=0; i<2; i++) {
-			sprintf(shortAddr+2*i,"%02x",data[SHORT_ADDR_START+i]);
+			sprintf(shortAddr+2*i,"%02x",data[OFFSET+SHORT_ADDR_START+i]);
 		}
 		shortAddr[4] = '\0';
 
@@ -95,6 +100,7 @@ void DealwithSerialData(uint8_t *data) {
 			case DEVICE_ID_S3:     sprintf(_devInfo.devName,"%s","s3");  break;
 			case DEVICE_ID_S5:     sprintf(_devInfo.devName,"%s","s5");  break;
 			case DEVICE_ID_S6:     sprintf(_devInfo.devName,"%s","s6");  break;
+			case DEVICE_ID_UART:   sprintf(_devInfo.devName,"%s","sx");  break;
 			default: printf("\n[ERR] Unknow Device"); break;
 		}
 		if(data[FRAME_CMD_DEV_ID] != DEVICE_ID_S2) {

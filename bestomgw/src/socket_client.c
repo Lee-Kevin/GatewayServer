@@ -36,6 +36,7 @@
 #endif
 
 #include "socket_client.h"
+#include "devicestatus.h"
 
 #define __BIG_DEBUG__
 
@@ -74,7 +75,8 @@ typedef struct LinkedMsg linkedMsg;
 /**************************************************************************************************
  *                                        Global Variables
  **************************************************************************************************/
-char mac[23];
+extern uint8_t CheckDevicestatusErrFlag;
+ char mac[23];
 int localport;
  
 /**************************************************************************************************
@@ -103,6 +105,7 @@ static void *SocketThreadFunc (void *ptr);
 static void *rxThreadFunc (void *ptr);
 static void *handleThreadFunc (void *ptr);
 static void *heartBeatThreadFunc (void *ptr);
+static void *sendDeviceStatusFunc (void *ptr);
 
 // Mutex to handle rx 互斥锁， pthread_mutex_t 是一个结构体，PTHREAD_MUTEX_INITIALIZER   结构常量
 pthread_mutex_t clientRxMutex = PTHREAD_MUTEX_INITIALIZER;
@@ -123,9 +126,10 @@ static pthread_cond_t socketErrCond;
 struct addrinfo *resAddr;
 #endif
 
-socketClientCb_t socketClientRxCb;
-socketSendApinfo_t socketApSendinfo;
-socketHeartbeat_t socketHeartbeatFun;
+socketClientCb_t    socketClientRxCb;
+socketSendApinfo_t  socketApSendinfo;
+socketHeartbeat_t   socketHeartbeatFun;
+socketSendStatus_t  socketSendStatusFun;
 /**************************************************************************************************
  *                                     Local Function Prototypes
  **************************************************************************************************/
@@ -136,6 +140,12 @@ static void delSyncRes(void);
 
 void heartBeatRegisterCallbackFun(socketHeartbeat_t heartbeatfun) {
 	socketHeartbeatFun = heartbeatfun;
+}
+
+/* 注册发送设备在线状态函数 */
+
+void sendStatusRegisterCallbackFun(socketSendStatus_t sendstatusfun) {
+	socketSendStatusFun = sendstatusfun;
 }
 
 int socketClientInit(const char *devPath, socketClientCb_t cb,socketSendApinfo_t apsendtoserver) {
@@ -283,6 +293,7 @@ static void *SocketThreadFunc (void *ptr) {
 		} while (res !=1);
 
 		SocketErrFlag = 0;
+		CheckDevicestatusErrFlag = 1;  // Socket 第一次连接成功
 		int no = 0;
 		// allow out-of-band data
 		if (setsockopt(sClientFd, SOL_SOCKET, SO_OOBINLINE, &no, sizeof(int)) == -1)
@@ -296,6 +307,14 @@ static void *SocketThreadFunc (void *ptr) {
 		socketApSendinfo(mac,localport);
 		
 		initSyncRes();
+		
+		
+		if (pthread_create(&RTISThreadId, NULL, sendDeviceStatusFunc, NULL))
+		{
+			// thread creation failed
+			printf("Failed to create sendDeviceStatusFunc \n");
+			// return -1;
+		}
 		
 		if (pthread_create(&RTISThreadId, NULL, rxThreadFunc, NULL))
 		{
@@ -318,6 +337,7 @@ static void *SocketThreadFunc (void *ptr) {
 			// return -1;
 		}
 		
+
 		if (tryLockFirstTimeOnly == 0) {
 			// Lock mutex
 			debug_printf("[MUTEX] Lock AREQ Mutex (Handle)\n");
@@ -328,7 +348,7 @@ static void *SocketThreadFunc (void *ptr) {
 		}
 		printf("\n\n[DBG] The RTISThreadId is %d\n\n",RTISThreadId);
 		pthread_cond_wait(&socketErrCond, &clientRxMutex);
-		
+		CheckDevicestatusErrFlag = 2;                      // Socket 断开之后，暂时停止子设备的在线状态检查
 		debug_printf("\n[DBG] Wait for the thread end...\n");
 		// pthread_join(RTISThreadId,&handleThreadFunc);
 		// pthread_join(RTISThreadId,&heartBeatThreadFunc);
@@ -339,6 +359,50 @@ static void *SocketThreadFunc (void *ptr) {
 		
 	} while(1);
 }
+
+/*********************************************************************
+ * @fn    sendDeviceStatusFunc
+ *
+ * @brief 发送设备在线状态函数
+ *
+ * @param ptr, 从父线程传递来的参数
+ *
+ * @return
+ */
+
+
+static void *sendDeviceStatusFunc (void *ptr) {
+	uint8_t done = 0;
+
+	debug_printf("\n[DBG] -----I am in the sendDeviceStatusFunc---------\n");	
+	do {
+
+		
+		if(SocketErrFlag == 1) {
+			done = 1; // there is something wrong
+			break;
+		} else {
+			if (NULL != socketSendStatusFun) {
+				socketSendStatusFun();
+				// sleep(1);
+			}
+		}
+	}while (!done);
+	
+	debug_printf("[DBG] I am going to exit heartBeatThreadFunc");
+	SocketErrFlag = 1;  // Socket 发生错误  
+}
+
+/*********************************************************************
+ * @fn    heartBeatThreadFunc
+ *
+ * @brief 发送心跳包函数
+ *
+ * @param ptr, 从父线程传递来的参数
+ *
+ * @return
+ */
+
 
 static void *heartBeatThreadFunc (void *ptr) {
 	uint8_t done = 0, tryLockFirstTimeOnly = 0;
@@ -393,7 +457,6 @@ static void *heartBeatThreadFunc (void *ptr) {
 	debug_printf("[DBG] I am going to exit heartBeatThreadFunc");
 	SocketErrFlag = 1;  // Socket 发生错误  
 }
-
 
 
 static void *handleThreadFunc (void *ptr)

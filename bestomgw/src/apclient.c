@@ -22,6 +22,8 @@
 #include <sys/socket.h>
 #include <poll.h>
 
+#include <mqueue.h>
+
 #include "socket_client.h"
 #include "interface_srpcserver.h"
 #include "hal_defs.h"
@@ -35,7 +37,7 @@
 #include "cJSON.h"
 #include "database.h"
 #include "interface_protocol.h"
-
+#include "devicestatus.h"
 
 #define CONSOLEDEVICE "/dev/console"
 
@@ -136,10 +138,12 @@ int main(int argc, char *argv[])
 	
 	//InsertDatatoDatabase(&test_device);
 	//UpdateDatatoDatabase(dbFilename,&test_device);
-	
+	CheckDevicestatusInit(dbFilename);  // 初始化子设备在线状态检查函数
 	/*初始化 socket*/
-	socketClientInit(str, socketClientCb,sendAPinfotoServer);
 	heartBeatRegisterCallbackFun(sendHeartBeattoServer);
+	sendStatusRegisterCallbackFun(sendOnlineStatustoServer);
+	socketClientInit(str, socketClientCb,sendAPinfotoServer);
+
     // getClientLocalPort(&localport, &mac);
 	
 	printf("**** The MAC addr : %s, the port : %d ******\n",mac,localport);
@@ -164,6 +168,8 @@ int main(int argc, char *argv[])
 			printf("\n Send device info to server\n");
 			GetDevInfofromDatabase("e75f6414004b1200",&mydevinfo);
 			printf("\nThe shortAddr is %s the prdID is %s\n",mydevinfo.shortAddr,mydevinfo.prdID);
+			
+			CheckDevStatusfromDatabase("08",2);
 			
 			// sendDevinfotoServer(mac, localport);
 		} else if (strcmp("start",chartemp) == 0){

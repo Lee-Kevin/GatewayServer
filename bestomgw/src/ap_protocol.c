@@ -20,6 +20,8 @@
 #include "cJSON.h"
 #include "zbSocCmd.h"
 #include "database.h"
+#include <sys/ipc.h>
+#include "devicestatus.h"
 
 #define __BIG_DEBUG__
 
@@ -34,6 +36,7 @@
 #define SUCCESS                       1
 #define FAILED                        0
 
+extern int QueueIndex;
 sendDatatoServer_t APSendMsgtoServer;
 
 sFrame_head_t  Frame_Common;
@@ -405,6 +408,108 @@ int sendCommReplytoServer(sFrame_head_t* reply_packet, int result) {
 }
 
 /*********************************************************************
+ * @fn    sendOnlineStatustoServer
+ *
+ * @brief 从队列 QueueIndex 里读取设备状态信息， 然后发送子设备的状态信息至M1
+ *
+ * @param 无，需要使用队列全部变量
+ *
+ * @return
+ */
+
+uint8_t sendOnlineStatustoServer() {
+
+	sFrame_head_t Frame_toSend;
+	myMsg_t msg;
+	int size;
+	// pdu_content_t _content_toSend = *devicepdu;
+	
+	//printf(">This is sendAPinfotoServer\n");
+    cJSON * pduJsonObject = NULL;
+    // cJSON * devParamJsonArray = NULL;
+    cJSON * devDataArrayObject= NULL;
+    // cJSON * devArray = NULL;
+    cJSON*  devObject = NULL;	
+	
+	size = msgrcv(QueueIndex, &msg, sizeof(myMsg_t), 1, IPC_NOWAIT);  // 非阻塞式接收消息
+    if ( size <= 0 ) // 出错 
+    {  
+		// debug_printf("\n[DBG] There is nothing recived");
+        return PROTOCOL_OK;  
+    }  else {
+		pduJsonObject = cJSON_CreateObject();
+		if(NULL == pduJsonObject)
+		{
+			// create object faild, exit
+			cJSON_Delete(pduJsonObject);
+			return PROTOCOL_FAILED;
+		}
+		/*add pdu type to pdu object*/
+		cJSON_AddNumberToObject(pduJsonObject, "pduType", TYPE_REPORT_DATA);
+		
+		devDataArrayObject = cJSON_CreateArray();
+		if (NULL == devDataArrayObject) {
+					// create object faild, exit
+			cJSON_Delete(devDataArrayObject);
+			return PROTOCOL_FAILED;
+		}
+		cJSON_AddItemToObject(pduJsonObject,"devData",devDataArrayObject);
+		
+		
+		for (int j=0; j<1; j++) {
+			
+			cJSON* devDataArrayContent = cJSON_CreateObject();
+			
+			/*
+			** 每一次循环，都往数组里面添加新的内容 
+			*/
+			cJSON_AddStringToObject(devDataArrayContent,"devName", msg.msgName);
+			cJSON_AddStringToObject(devDataArrayContent,"devId", msg.msgDevID);
+		
+			cJSON * devParamJsonArray = cJSON_CreateArray();
+			if (NULL == devParamJsonArray) {
+				cJSON_Delete(devParamJsonArray);
+				return PROTOCOL_FAILED;
+			}
+			cJSON_AddItemToObject(devDataArrayContent,"param",devParamJsonArray);
+			
+			//devparam_t *searchList = &_content_toSend.param, *clearList;
+			// devparam_t *searchList = _content_toSend.param, *clearList;
+			
+			for(int i=0; i<1; i++) {
+				cJSON* arrayObject = cJSON_CreateObject();
+				
+				if(NULL == arrayObject) {
+					cJSON_Delete(arrayObject);
+					return PROTOCOL_FAILED;
+				}
+				cJSON_AddNumberToObject(arrayObject,"type", PARAM_TYPE_ONINE_STATUS);
+				cJSON_AddNumberToObject(arrayObject,"value",msg.value);
+				// memset(clearList, 0, sizeof(devparam_t));
+				cJSON_AddItemToArray(devParamJsonArray,arrayObject);
+			}
+			
+			cJSON_AddItemToArray(devDataArrayObject,devDataArrayContent);
+		}
+		//debug_printf("\n[DBG] After create jsonArray\n");
+		//debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pduJsonObject));	
+		Frame_toSend.sn         = 1;
+		Frame_toSend.version    = 0;
+		Frame_toSend.netflag    = NET_TYPE_WAN;
+		Frame_toSend.cmdtype    = CMD_TYPE_UPLOAD;
+		Frame_toSend.pdu        = (char *)cJSON_PrintUnformatted(pduJsonObject);
+		
+		//debug_printf("\n[DBG] before Frame_packet_send \n");
+		Frame_packet_send(&Frame_toSend);
+		//debug_printf("\n[DBG] After Frame_packet_send \n");
+		cJSON_Delete(pduJsonObject);
+		//debug_printf("\n[DBG] After cJSON_Delete \n");
+		return PROTOCOL_OK;
+	}
+}
+
+
+/*********************************************************************
  * @fn    sendDevinfotoServer
  *
  * @brief 发送子设备基本信息到Server
@@ -680,6 +785,21 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 			
 		} 
 		break;
+		case DEVICE_ID_UART: {
+			static uint8_t payload;
+			ZocCmd_packet.frame.payload_len = 0x03;
+			switch (DatatoWrite.type) {
+				case PARAM_TYPE_S12_SWITCH:  value?(payload=0x00):(payload=0xFF);    break;
+				case PARAM_TYPE_S12_REALY_1: value?(payload&=~0x01):(payload|=0x01); break;
+				case PARAM_TYPE_S12_REALY_2: value?(payload&=~0x02):(payload|=0x02); break;
+				case PARAM_TYPE_S12_REALY_3: value?(payload&=~0x04):(payload|=0x04); break;
+				case PARAM_TYPE_S12_REALY_4: value?(payload&=~0x08):(payload|=0x08); break;			
+				default: break;
+			}
+			ZocCmd_packet.frame.payload[0] = payload;
+		}
+		break;
+		
 		default: printf("\n[ERR] There is something wrong with DevID"); break;
 		
 	}

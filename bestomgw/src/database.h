@@ -27,6 +27,7 @@ struct sDevlist_info {
     uint8_t  status;
 	uint8_t  power;
 	char  	 note[25];
+	char     TimeText[20];
     void     *next;
 };
 typedef struct sDevlist_info sDevlist_info_t;

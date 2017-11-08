@@ -134,7 +134,7 @@ typedef struct pdu_content pdu_content_t;
 /*Upload*********************************************************************/
 
 /*AP report device data to M1*//*M1 report device data to APP*/
-#define TYPE_REPORT_DATA                         0x1002
+#define TYPE_REPORT_DATA                         0x1001
 /*M1 report device information to APP*/
 #define TYPE_M1_REPORT_AP_INFO					 0x1003
 /*M1 report added AP & dev information to APP*/
@@ -195,6 +195,7 @@ void AP_Protocol_init(sendDatatoServer_t sendfunc);
 int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu);
 int sendDevDatatoServer(pdu_content_t *devicepdu);
 int sendHeartBeattoServer(char * macAddr);
+uint8_t sendOnlineStatustoServer();
 
 
 #ifdef __cplusplus

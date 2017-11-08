@@ -49,7 +49,7 @@ extern "C" {
 
 // 自定义数据包里的结构体
 
-#define ATTR_PACKED_SIZE 32
+#define ATTR_PACKED_SIZE 128
 struct zocATTR_PACKED {
   uint8_t pData[ATTR_PACKED_SIZE];
 };
@@ -96,6 +96,8 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 #define DEVICE_ID_S5     		      0x08
 
 #define DEVICE_ID_S6     		      0x15   ///* 红外学习 */
+
+#define DEVICE_ID_UART                0x20   ///* 串口透传类设备 */
 
 #define DEVICE_ID_RELAY               0x17
 // 允许组网命令
