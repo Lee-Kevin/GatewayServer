@@ -38,6 +38,8 @@ uint8_t InsertDatatoDatabase(sDevlist_info_t * devInfo);
 uint8_t UpdateDatatoDatabase(sDevlist_info_t * devInfo);
 uint8_t UpdateDevStatustoDatabase(sDevlist_info_t * devInfo);
 uint8_t GetDevInfofromDatabase(char *DevId, sDevlist_info_t *devinfo);
+void    Start_Transaction(sqlite3* db);
+void  	End_Transaction(sqlite3* db);
 
 
 

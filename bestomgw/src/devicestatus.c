@@ -51,7 +51,7 @@
 
 #define MQNAME "."
 #define MAXBUF 20;
-#define CHECKTIMEINTERVAL  10
+#define CHECKTIMEINTERVAL  30          // unit s 
 
 uint8_t CheckDevicestatusErrFlag = 1;  // 0 代表没有错误， 1 代表刚刚连接成功  2 断开
 
@@ -220,91 +220,92 @@ uint8_t CheckDevStatusfromDatabase(char *PrdId, uint8_t index) {
 	if(rc){  
 		fprintf(stderr, "Can't open database: %s\n", sqlite3_errmsg(db));   
 	}else{  
-		fprintf(stderr, "InsertDatatoDatabase Opened database successfully\n");  
-	}
-	sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL);              /* 将sql命令 转存至stmt 结构体之中 */
-	sqlite3_bind_text(stmt, 1, PrdId, -1, NULL);
-	
-	while(sqlite3_step(stmt) != SQLITE_DONE) {
-		int num_cols = sqlite3_column_count(stmt);
-		debug_printf("\n[DBG] The lines\n");
+		sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL);              /* 将sql命令 转存至stmt 结构体之中 */
+		sqlite3_bind_text(stmt, 1, PrdId, -1, NULL);
+		Start_Transaction(db);  // 开启事务模式
 		
-		for (uint8_t i = 0; i < num_cols; i++)
-		{
-			if (i==1) {
-				sprintf(msg.msgName,"%s",sqlite3_column_text(stmt, i));
-			} else if (i==2) {
-				sprintf(devInfo->prdID,"%s",sqlite3_column_text(stmt, i));
-				// *devInfo.prdID = sqlite3_column_text(stmt, i);
-			} else if (i==4) {     // 获得设备ID
-				sprintf(devInfo->devID,"%s",sqlite3_column_text(stmt, i));
-				// *devInfo.shortAddr = sqlite3_column_text(stmt, i);
-				// sprintf(msg.msgName,"%s",sqlite3_column_text(stmt, i));
-				sprintf(msg.msgDevID,"%s",sqlite3_column_text(stmt, i));
-			} else if (i==5) {
-				devInfo->status = sqlite3_column_int(stmt, i); // 模块的在线状态信息 0 Offline 1 Online
-				if(!devInfo->status) {
-					break; //已经离线的设备无需检查
-				}
-			} else if (i==8) { // 获得时间  
-				struct tm * tmp_time = (struct tm *)malloc(sizeof(struct tm));
-				sprintf(devInfo->TimeText,"%s",sqlite3_column_text(stmt, i));
-				strptime(devInfo->TimeText,"%Y-%m-%d %H:%M:%S",tmp_time);
-				time_t last_time = mktime(tmp_time);
-				
-				debug_printf("\n[DBG] The last timestamp is %ld",last_time);
-				time_t now_time;
-				time(&now_time);
-				debug_printf("\n[DBG] The now timestamp is %ld", now_time);
-				if((now_time - last_time) > 60 * g_devinfo[index].time_minute ) {  // If the node is offline
-					char* err_msg = NULL;
-					printf("The device is offline");
-					msg.msgType = 1;
-					msg.value  = 0;
-							/* 调用msgsnd 将数据放到消息队列中 */
-					if ( -1 == (msgsnd(QueueIndex, &msg, sizeof(myMsg_t), 0)) )  
-					{
+		while(sqlite3_step(stmt) != SQLITE_DONE) {
+			int num_cols = sqlite3_column_count(stmt);
+			debug_printf("\n[DBG]********************************\n");
+			
+			for (uint8_t i = 0; i < num_cols; i++)
+			{
+				if (i==1) {
+					sprintf(msg.msgName,"%s",sqlite3_column_text(stmt, i));
+				} else if (i==2) {
+					sprintf(devInfo->prdID,"%s",sqlite3_column_text(stmt, i));
+					// *devInfo.prdID = sqlite3_column_text(stmt, i);
+				} else if (i==4) {     // 获得设备ID
+					sprintf(devInfo->devID,"%s",sqlite3_column_text(stmt, i));
+					// *devInfo.shortAddr = sqlite3_column_text(stmt, i);
+					// sprintf(msg.msgName,"%s",sqlite3_column_text(stmt, i));
+					sprintf(msg.msgDevID,"%s",sqlite3_column_text(stmt, i));
+				} else if (i==5) {
+					devInfo->status = sqlite3_column_int(stmt, i); // 模块的在线状态信息 0 Offline 1 Online
+					if(!devInfo->status) {
+						break; //已经离线的设备无需检查
 					}
-					devInfo->status = 0;
+				} else if (i==8) { // 获得时间  
+					struct tm * tmp_time = (struct tm *)malloc(sizeof(struct tm));
+					sprintf(devInfo->TimeText,"%s",sqlite3_column_text(stmt, i));
+					strptime(devInfo->TimeText,"%Y-%m-%d %H:%M:%S",tmp_time);
+					time_t last_time = mktime(tmp_time);
 					
-					sprintf(devInfo->note,"%s","OffLine");
-					sprintf(sql1,"UPDATE Devlist SET DeviceStatus = %d, \
-	                    TIME = datetime('now','localtime'), \
-						Note = '%s' \
-						WHERE DeviceId = '%s'",devInfo->status,devInfo->note,devInfo->devID);
-					rc = sqlite3_exec(db, sql1, NULL, 0, &err_msg);
-					if(rc != SQLITE_OK) {
-						printf("SQL error:%s\n",err_msg);
-						sqlite3_free(err_msg);
-					} 
+					debug_printf("\n[DBG] The last timestamp is %ld\n",last_time);
+					time_t now_time;
+					time(&now_time);
+					debug_printf("\n[DBG] The now timestamp is %ld\n", now_time);
+					long timeInterval = now_time - last_time;
+					debug_printf("\n[DBG] The timeInterval is %ld\n", timeInterval);
+					if(timeInterval > 60 * g_devinfo[index].time_minute ) {  // If the node is offline
+						char* err_msg = NULL;
+						printf("\nThe device is offline\n");
+						msg.msgType = 1;
+						msg.value  = 0;
+								/* 调用msgsnd 将数据放到消息队列中 */
+						if ( -1 == (msgsnd(QueueIndex, &msg, sizeof(myMsg_t), 0)) )  
+						{
+						}
+						devInfo->status = 0;
+						
+						sprintf(devInfo->note,"%s","OffLine");
+						sprintf(sql1,"UPDATE Devlist SET DeviceStatus = %d, \
+							TIME = datetime('now','localtime'), \
+							Note = '%s' \
+							WHERE DeviceId = '%s'",devInfo->status,devInfo->note,devInfo->devID);
+						rc = sqlite3_exec(db, sql1, NULL, 0, &err_msg);
+						if(rc != SQLITE_OK) {
+							printf("SQL error:%s\n",err_msg);
+							sqlite3_free(err_msg);
+						} 
+					}
+					free(tmp_time);
+					
 				}
-				free(tmp_time);
 				
+				switch (sqlite3_column_type(stmt, i))
+				{
+				case (SQLITE3_TEXT):
+					printf("%d %s, ", i,sqlite3_column_text(stmt, i));
+					break;
+				case (SQLITE_INTEGER):
+					printf("%d,%d, ",i, sqlite3_column_int(stmt, i));
+					break;
+				case (SQLITE_FLOAT):
+					printf("%d, %g, ", i,sqlite3_column_double(stmt, i));
+					break;
+				default:
+					break;
+				}
 			}
 			
-			switch (sqlite3_column_type(stmt, i))
-			{
-			case (SQLITE3_TEXT):
-				printf("%d %s, ", i,sqlite3_column_text(stmt, i));
-				break;
-			case (SQLITE_INTEGER):
-				printf("%d,%d, ",i, sqlite3_column_int(stmt, i));
-				break;
-			case (SQLITE_FLOAT):
-				printf("%d, %g, ", i,sqlite3_column_double(stmt, i));
-				break;
-			default:
-				break;
-			}
+			debug_printf("\n[DBG] The num_cols is %d",num_cols);
 		}
-		
-		debug_printf("\n[DBG] The num_cols is %d",num_cols);
+		End_Transaction(db);			// 关闭事务模式
+		sqlite3_finalize(stmt);
+		sqlite3_close(db); 
+		debug_printf("[DBG] End of the CheckDevStatusfromDatabase\n");
 	}
-
-	sqlite3_finalize(stmt);
-	sqlite3_close(db); 
-	debug_printf("[DBG] Insert the data to the database\n");
-
 	return rc;
 }
 
