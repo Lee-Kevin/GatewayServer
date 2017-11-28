@@ -33,9 +33,13 @@
 * 本地函数声明
 * 
 */
+
+static void UploadS1Data(uint8_t *data); 
 static void UploadS2Data(uint8_t *data);
+static void UploadS3Data(uint8_t *data);
 static void UploadS4Data(uint8_t *data);
 static void UploadS5Data(uint8_t *data);
+static void UploadS8Data(uint8_t *data);
 
 static void test(uint8_t flag);
 
@@ -72,7 +76,7 @@ void DealwithSerialData(uint8_t *data) {
 	/**
 	* 记录设备信息并储存至数据库，并把设备名称和设备ID上传至M1 允许入网后执行的操作
 	*/
-	if (allowNetFlag && ((data[FRAME_CMD_DEV_ID] < 0x80) || ((data[FRAME_CMD_DEV_ID]>=0xC0) && (data[FRAME_CMD_DEV_ID] <= 0xCF))) ) {  // 过来的信息，是有关设备的数据
+	if (allowNetFlag && (data[FRAME_CMD_DEV_ID] < 0x80) ) {  // 过来的信息，是有关设备的数据
 		uint8_t result = 0;
 		uint16_t tempprdID = 0x0000;
 		sDevlist_info_t _devInfo;
@@ -83,7 +87,7 @@ void DealwithSerialData(uint8_t *data) {
 		if(data[FRAME_CMD_DEV_ID] == DEVICE_ID_UART) {
 			sprintf(prdID,"%02x",data[FRAME_CMD_DEV_ID]);  
 		} else {
-			sprintf(prdID,"%02x",0xc0); 
+			sprintf(prdID,"%02x",data[FRAME_CMD_DEV_ID]); 
 		}
 		prdID[2] = '\0';
 
@@ -100,12 +104,14 @@ void DealwithSerialData(uint8_t *data) {
 			case DEVICE_ID_S3:     sprintf(_devInfo.devName,"%s","s3");  break;
 			case DEVICE_ID_S5:     sprintf(_devInfo.devName,"%s","s5");  break;
 			case DEVICE_ID_S6:     sprintf(_devInfo.devName,"%s","s6");  break;
+			case DEVICE_ID_S8:     sprintf(_devInfo.devName,"%s","s8");  break;
+			// case DEVICE_ID_UART:   sprintf(_devInfo.devName,"%s","sx");  break;
 			case DEVICE_ID_UART:   sprintf(_devInfo.devName,"%s","sx");  break;
 			default: printf("\n[ERR] Unknow Device"); break;
 		}
 		if(data[FRAME_CMD_DEV_ID] != DEVICE_ID_S2) {
 			for(uint8_t i=0; i<8; i++) {
-				sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
+				sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i+OFFSET]);
 			}
 			devID[16] = '\0';
 		} else {
@@ -184,6 +190,8 @@ void DealwithSerialData(uint8_t *data) {
 		debug_printf("\n[DBG] CMD_TYPE_DEVICE_ACK\n");
 		DealwithAckData(data);
 		break;
+	case CMD_TYPE_DEVICE_TEST:
+		debug_printf("\n[DBG] This is device test");
 	default:
 		break;
 	}
@@ -218,6 +226,7 @@ void DealwithUploadData(uint8_t *data) {
 		case DEVICE_ID_S3: UploadS3Data(data);  break;          // 有源面板
 		case DEVICE_ID_S4: UploadS4Data(data);  break;			// 温湿度
 		case DEVICE_ID_S5: UploadS5Data(data);	break;		    // 光照度
+		case DEVICE_ID_S8: UploadS8Data(data);	break;		    // 光照度
 		case DEVICE_ID_RELAY:				break;
 		default:	break;
 	}
@@ -536,6 +545,75 @@ void UploadS4Data(uint8_t *data) {
 	newdevParam[2].next      = NULL;
 	debug_printf("\n[DBG] newdevParam[2]->type = %d\n",newdevParam[2].type);	
 	debug_printf("\n[DBG] newdevParam[2]->value = %d\n",newdevParam[2].value);
+	_pdu_content.param        =  &newdevParam[0];		
+
+	sendDevDatatoServer(&_pdu_content);
+	debug_printf("\n[DBG] After sendDevDatatoServer\n");
+	
+	sDevlist_info_t  _Devlist_info;
+	_Devlist_info.status = 1;
+	// _Devlist_info.note   = "update online";
+	sprintf(_Devlist_info.note,"%s","update online");
+	sprintf(_Devlist_info.devID,"%s",devID);
+	UpdateDevStatustoDatabase(&_Devlist_info);
+	
+}
+
+/*************************************************************************************************
+ * @fn      UploadS8Data()
+ *
+ * @brief   上传S8空气质量监测模块信息至M1
+ *
+ * @param   串口传来的数据帧
+ *
+ * @return  无
+ *************************************************************************************************/
+void UploadS8Data(uint8_t *data) {
+	char devID[17];
+    pdu_content_t _pdu_content;  
+	//pdu_content_t _pdu_content;
+	for(uint8_t i=0; i<8; i++) {
+		sprintf(devID+2*i,"%02x",data[SHORT_ADDR_START+2+i]);
+	}
+	devID[16] = '\0';
+	
+	uint16_t TM_DATA = data[PAYLOAD_START]*256 + data[PAYLOAD_START+1];
+	float temp = ((175.72*TM_DATA)/65536) - 46.85;
+	uint16_t RH_DATA = (data[PAYLOAD_START+2]<<8) + data[PAYLOAD_START+3];
+	float humidity = (125*RH_DATA)/65536 - 6;
+	uint16_t PM2_5 = (data[PAYLOAD_START+4]<<8) + data[PAYLOAD_START+5];
+	uint16_t CO_2  = (data[PAYLOAD_START+6]<<8) + data[PAYLOAD_START+7];
+	uint16_t CH_4  = (data[PAYLOAD_START+8]<<8) + data[PAYLOAD_START+9];
+	
+	
+	_pdu_content.deviceName  = "s8";
+	_pdu_content.deviceID    = devID;
+	_pdu_content.paramNum    = 5;
+			
+    debug_printf("\n[DBG] the device ID is %s\n",devID);
+	// devparam_t (*newdevParam)[_pdu_content.paramNum] = (devparam_t *) malloc(_pdu_content.paramNum*sizeof(devparam_t));
+	devparam_t newdevParam[_pdu_content.paramNum];
+
+	// 温度扩大十倍
+	newdevParam[0].type      = PARAM_TYPE_S4_TEMP;
+	newdevParam[0].value     = (uint16_t)(temp*10+0.5);
+	newdevParam[0].next	  	 = &newdevParam[1];
+	newdevParam[1].type	  	 = PARAM_TYPE_S4_HUMI;
+	newdevParam[1].value     = (uint8_t)(humidity+0.5);
+	newdevParam[1].next      = &newdevParam[2];		
+	newdevParam[2].type	  	 = PARAM_TYPE_S8_PM25;
+	newdevParam[2].value     = PM2_5;
+	newdevParam[2].next      = &newdevParam[3];
+	newdevParam[3].type      = PARAM_TYPE_S8_CO2;
+	newdevParam[3].value     = CO_2;
+	newdevParam[3].next	  	 = &newdevParam[4];
+	newdevParam[4].type      = PARAM_TYPE_S8_CH4;
+	newdevParam[4].value     = CH_4;
+	newdevParam[4].next	  	 = NULL;
+
+	// debug_printf("\n[DBG] newdevParam[2]->type = %d\n",newdevParam[2].type);	
+	// debug_printf("\n[DBG] newdevParam[2]->value = %d\n",newdevParam[2].value);
+	
 	_pdu_content.param        =  &newdevParam[0];		
 
 	sendDevDatatoServer(&_pdu_content);

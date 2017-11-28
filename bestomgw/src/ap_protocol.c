@@ -86,7 +86,11 @@ void data_handle(char* data)
 	printf("**************************************************\n");
 	printf("> I have got the message:\n %s\n",data);
 	printf("**************************************************\n");	
-	
+	#if PACKET_HEAD
+		rootJson = cJSON_Parse(&data[4]);
+	#else 
+		rootJson = cJSON_Parse(data);
+	#endif
     rootJson = cJSON_Parse(data);
     if(NULL == rootJson){
 		debug_printf("[DBG] rootJson null\n");
@@ -779,7 +783,6 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 					break;
 					case 0x04: break; // 删除功能
 					default:   break;
-						
 				}
 			}
 			
@@ -861,7 +864,25 @@ void Frame_packet_send (sFrame_head_t* _pFrame_Common) {
     if (NULL == APSendMsgtoServer) {
 		debug_printf("[ERR] Please init the APSendMsgtoServer func \n");
 	} else {
-		APSendMsgtoServer((char *)cJSON_PrintUnformatted(pJsonRoot));
+		#if 0
+		uint16_t len = strlen((char *)cJSON_PrintUnformatted(pJsonRoot));
+		uint8_t * data = (char *)malloc(len + 4);
+		data[0] = 0xFE;
+		data[1] = 0xFD;
+		data[2] = len/256;
+		data[3] = len%256;
+		debug_printf("\n[DBG] the len is %x \n",len);
+		// sprintf(&data[0],"%02x%02x%02x%02x",0xFE,0xFD,len/256,len%256);
+		sprintf(&data[4],"%s",(char *)cJSON_PrintUnformatted(pJsonRoot));
+		debug_printf("\n[DBG] the data is %d \n",data);
+		debug_printf("\n[DBG] the data[4] is %s \n",&data[4]);
+		APSendMsgtoServer(data);
+		free(data);
+		#else 
+		APSendMsgtoServer((char *)cJSON_PrintUnformatted(pJsonRoot));	
+		#endif
+		
+		
 		debug_printf("[DBG] SEND packet to server successfully \n");
 	}
 }

@@ -38,11 +38,11 @@
 #define S3_PRDID  "14"
 #define S4_PRDID  "01"
 #define S5_PRDID  "08"
-#define S6_PRDID  "20"
-#define S7_PRDID  "20"
-#define S8_PRDID  "20"
-#define S9_PRDID  "20"
-#define S10_PRDID  "20"
+#define S6_PRDID  "80"
+#define S7_PRDID  "80"
+#define S8_PRDID  "18"
+#define S9_PRDID  "80"
+#define S10_PRDID  "80"
 #define S11_PRDID  "20"
 #define S12_PRDID  "17"
 
@@ -68,7 +68,7 @@ typedef struct __tag_devinfo{
 static DEV_info g_devinfo[]={
 		{S1_PRDID, 2, 0},    
 		{S2_PRDID, 2, 0},
-		{S3_PRDID, 2, 0},
+//		{S3_PRDID, 2, 0},
 		{S4_PRDID, 2, 0},
 		{S5_PRDID, 2, 0},
 		{S6_PRDID, 2, 0},

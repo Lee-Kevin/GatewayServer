@@ -49,6 +49,8 @@
 #define msg_memcpy(src, dst, len)	memcpy(src, dst, len)
 
 
+#define PACKET_HEAD                   0           //  定义包前面的包头是否需要
+
 /**************************************************************************************************
  *                                        Externals
  **************************************************************************************************/
@@ -795,16 +797,43 @@ void socketClientSendData (msgData_t *pMsg)
 	int i;
 	int datalen=0;
 	printf("\n[DBG] The sClientFd is %d",sClientFd);
+	
 	datalen = strlen(pMsg->pData);
-	if(SocketErrFlag == 1) {
-		printf("\n[ERR] The sClientFd is %d",sClientFd);
-	} else {
-		if (send(sClientFd, ((uint8_t*)pMsg), datalen , 0) == -1)
-		{
-			perror("send");
-			debug_printf("\n[ERR] There is something error on socket, please init the socket again\n");
+	
+	#if PACKET_HEAD
+		uint8_t * data = (char *)malloc(datalen + 4);
+		data[0] = 0xFE;
+		data[1] = 0xFD;
+		data[2] = datalen/256;
+		data[3] = datalen%256;
+		sprintf(&data[4],"%s",pMsg->pData);
+		// debug_printf("\n[DBG] the data is %s \n",data);
+		debug_printf("\n[DBG] the data[4] is %s \n",&data[4]);
+		datalen += 4;
+		if(SocketErrFlag == 1) {
+			printf("\n[ERR] The sClientFd is %d",sClientFd);
+		} else {
+			if (send(sClientFd, data, datalen , 0) == -1)
+			{
+				perror("send");
+				debug_printf("\n[ERR] There is something error on socket, please init the socket again\n");
+			}
 		}
-	}
+		free(data);
+	#else 
+		if(SocketErrFlag == 1) {
+			printf("\n[ERR] The sClientFd is %d",sClientFd);
+		} else {
+			if (send(sClientFd, ((uint8_t*)pMsg), datalen , 0) == -1)
+			{
+				perror("send");
+				debug_printf("\n[ERR] There is something error on socket, please init the socket again\n");
+			}
+		}
+	#endif
+		
+	
+
 
 }
 

@@ -72,7 +72,6 @@ typedef struct device_write devWriteData_t;
 ]
 }
 }
-
 */
 
 // 存储param对应的类型和值
@@ -177,6 +176,10 @@ typedef struct pdu_content pdu_content_t;
 #define PARAM_TYPE_S4_HUMI						 0x4007
 
 #define PARAM_TYPE_S5_LIGHT						 0x4008
+
+#define PARAM_TYPE_S8_PM25						 0x4017
+#define PARAM_TYPE_S8_CO2						 0x4018
+#define PARAM_TYPE_S8_CH4						 0x4019
 
 #define PARAM_TYPE_S6_KEY						 0x8010
 

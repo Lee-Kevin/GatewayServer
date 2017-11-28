@@ -253,7 +253,7 @@ uint8_t UpdateDevStatustoDatabase(sDevlist_info_t * devInfo) {
 	
 	sDevlist_info_t _devInfo = *devInfo;
 	int rc;
-	if (!CheckDevicestatusErrFlag) {
+	if (CheckDevicestatusErrFlag != 2) {
 		sqlite3* db = NULL;
 		sqlite3_stmt* stmt = NULL;
 		uint8_t deviceStatus = 1;
@@ -281,20 +281,20 @@ uint8_t UpdateDevStatustoDatabase(sDevlist_info_t * devInfo) {
 					deviceStatus = sqlite3_column_int(stmt, i);
 				}
 				
-				switch (sqlite3_column_type(stmt, i))
-				{
-				case (SQLITE3_TEXT):
-					printf("%d %s, ", i,sqlite3_column_text(stmt, i));
-					break;
-				case (SQLITE_INTEGER):
-					printf("%d,%d, ",i, sqlite3_column_int(stmt, i));
-					break;
-				case (SQLITE_FLOAT):
-					printf("%d, %g, ", i,sqlite3_column_double(stmt, i));
-					break;
-				default:
-					break;
-				}
+				// switch (sqlite3_column_type(stmt, i))
+				// {
+				// case (SQLITE3_TEXT):
+					// printf("%d %s, ", i,sqlite3_column_text(stmt, i));
+					// break;
+				// case (SQLITE_INTEGER):
+					// printf("%d,%d, ",i, sqlite3_column_int(stmt, i));
+					// break;
+				// case (SQLITE_FLOAT):
+					// printf("%d, %g, ", i,sqlite3_column_double(stmt, i));
+					// break;
+				// default:
+					// break;
+				// }
 			}
 			// debug_printf("\n[DBG] The num_cols is %d",num_cols);
 		}

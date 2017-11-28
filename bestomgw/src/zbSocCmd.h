@@ -88,6 +88,7 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 #define CMD_TYPE_SYS_SENDDOWN         0x02
 #define CMD_TYPE_DEVICE_EVENT		  0x03
 #define CMD_TYPE_DEVICE_ACK		      0x04
+#define CMD_TYPE_DEVICE_TEST		  0x05
 
 #define DEVICE_ID_S1        		  0x07
 #define DEVICE_ID_S2        		  0x05
@@ -95,7 +96,9 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 #define DEVICE_ID_S4     		      0x01
 #define DEVICE_ID_S5     		      0x08
 
+#define DEVICE_ID_S8				  0x18
 #define DEVICE_ID_S6     		      0x15   ///* 红外学习 */
+
 
 #define DEVICE_ID_UART                0x20   ///* 串口透传类设备 */
 
