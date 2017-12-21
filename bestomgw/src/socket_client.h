@@ -64,6 +64,8 @@ extern "C"
 #define MY_AP_MAX_BUF_LEN 2048
 #define DEFAULT_PORT "11235"
 
+#define PACKET_HEAD                   0          //  定义包前面的包头是否需要
+
 /**************************************************************************************************
  *                                        Type definitions
  * 数据包结构定义

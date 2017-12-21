@@ -24,6 +24,7 @@
 
 #include <mqueue.h>
 
+#include "log.h"
 #include "socket_client.h"
 #include "interface_srpcserver.h"
 #include "hal_defs.h"
@@ -38,6 +39,7 @@
 #include "database.h"
 #include "interface_protocol.h"
 #include "devicestatus.h"
+#include "msgqueue.h"
 
 #define CONSOLEDEVICE "/dev/console"
 
@@ -67,9 +69,19 @@ void sendDatatoServer(char *str);
 void socketClientCb(msgData_t *msg);
 void zbSocfun(ZOCData_t *msg);
 
+/*
+关于log的使用
 
-int main(int argc, char *argv[])
-{
+	logInfo("this is an info with an integer: %d",15);
+	logError("this is an error in scientifc notation: %e",1023332.222);
+	logDebug("this is a debug with string: %s %s", "hello", "world");
+	logWarn ("this is a warning with three decimals %0.3f", 3.33333);
+	logTrace("this is a trace with two decimals %0.2f", 3.33333);
+ 
+*/
+
+
+int main(int argc, char *argv[]) {
 	char servername[20];
 	char str[22];
 	int zbSoc_fd;
@@ -80,7 +92,17 @@ int main(int argc, char *argv[])
 	/* 
 	 * Client 默认连接的IP地址和端口可变
 	*/
-	sprintf(str,"%s","192.168.1.191:11235");
+	sprintf(str,"%s","192.168.2.1:11235");
+	
+	logInit("status.log");         // 初始化 log脚本  LOGFLAG_SYSLOG
+	logSetFlags(LOGFLAG_FILE |
+				LOGFLAG_INFO |
+				LOGFLAG_ERROR |
+				LOGFLAG_WARN |
+				LOGFLAG_TRACE|
+				LOGFLAG_DEBUG);
+	
+	logDebug("Begin the Application");
 	
 	if (argc < 2) {
 		printf(
@@ -90,7 +112,7 @@ int main(int argc, char *argv[])
 				"Example - connect to server: %s 127.0.0.1:11235\n",
 				argv[0]);
 		printf("--The default IP address and port is %s--\n",str);
-		printf("\n******************************************************\n",str);
+		printf("\n******************************************************\n");
 	} else {
 		for (int i=0; i < argc; i++) {
 			printf("Argument %d is %s.\n", i, argv[i]);
@@ -134,10 +156,9 @@ int main(int argc, char *argv[])
             strrchr(argv[0], '/') - argv[0], argv[0]);
 	sprintf(slogpath,"./zigbee.log");		
     printf("the dbFilename is %s, The slogpath is %s\n", dbFilename,slogpath);
+	MsgQueueInit();
 	APDatabaseInit(dbFilename);
 	
-	//InsertDatatoDatabase(&test_device);
-	//UpdateDatatoDatabase(dbFilename,&test_device);
 	CheckDevicestatusInit(dbFilename);  // 初始化子设备在线状态检查函数
 	/*初始化 socket*/
 	heartBeatRegisterCallbackFun(sendHeartBeattoServer);
@@ -173,18 +194,21 @@ int main(int argc, char *argv[])
 			
 			// sendDevinfotoServer(mac, localport);
 		} else if (strcmp("start",chartemp) == 0){
-			while(1) {
-			//	sendDevDatatoServer();
-				sleep(5);
-			}
-		} else {
+
+		} else if (strcmp("clearnet",chartemp) == 0) {
+			zbSocClearNwk();
+		} else if (strcmp("cleardev",chartemp) == 0) {
+			zbSocDeleteDeviceformNetwork();
+			// zbSocDeleteDeviceformNetwork("bb91");
+		}else {
 			printf("\n Please input again! \n");
 		}
 		
 		
 	}
 	sleep(60);
-
+	
+	logClose();
 	socketClientClose();
 	printf("\n%%%%%%%%%%%%%%%%%%%% This is Main function EXIT %%%%%%%%%%%%%%%%%%%%%\n");
 	return 0;

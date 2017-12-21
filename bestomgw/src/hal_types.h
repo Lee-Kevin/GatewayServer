@@ -52,7 +52,7 @@ typedef unsigned short  uint16;
 typedef signed   int   int32;
 typedef unsigned int   uint32;
 
-typedef unsigned char   bool;
+// typedef unsigned char   bool;
 
 typedef uint16          halDataAlign_t;
 

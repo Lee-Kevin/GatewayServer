@@ -6,18 +6,14 @@ extern "C"
 {
 #endif
 
-/* The Frame struct */
-// struct sDevlist_info {
-	// char     *devName;
-	// char     *prdID;
-	// char     *shortAddr;
-	// char     *devID;
-    // uint8_t  status;
-	// uint8_t  power;
-	// char  	 *note;
-    // void     *next;
-// };
-// typedef struct sDevlist_info sDevlist_info_t;
+#include "sqlite3.h"
+
+#define DATABASE_OPTION_INSERT    1
+#define DATABASE_OPTION_UPDATE    2
+#define DATABASE_OPTION_SELECT    3
+#define DATABASE_OPTION_DELETE    4 
+#define DATABASE_OPTION_NULL      5   
+
 
 struct sDevlist_info {
 	char     devName[10];

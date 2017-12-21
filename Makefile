@@ -1,28 +1,49 @@
-#############################################################
-# nfc daemon Makefile 
-#############################################################
-EXEC = apclient
-#CFLAGS += -O2 -Wall -Ibestomgw/inc
-CFLAGS += -O2 -Wall -std=gnu99
+#
+# hua.shao@mediatek.com
+#
+# MTK Property Software.
+#
 
-##OBJS = bestomgw/src/utils.o bestomgw/src/sqlite3.o bestomgw/src/timertask.o bestomgw/src/gateway.o 
+include $(TOPDIR)/rules.mk
 
-OBJS = bestomgw/src/utils.o bestomgw/src/sqlite3.o bestomgw/src/interface_protocol.o bestomgw/src/database.o \
-	bestomgw/src/zbSocCmd.o bestomgw/src/interface_devicelist.o bestomgw/src/interface_grouplist.o \
-	bestomgw/src/interface_scenelist.o bestomgw/src/interface_srpcserver.o bestomgw/src/socket_server.o\
-	bestomgw/src/socket_client.o bestomgw/src/SimpleDB.o bestomgw/src/SimpleDBTxt.o  bestomgw/src/cJSON.o\
-	bestomgw/src/ap_protocol.o bestomgw/src/apclient.o\
+PKG_NAME:=apclient
+PKG_RELEASE:=1
 
-
-all: $(EXEC)
-
-$(EXEC): $(OBJS) $(LIBS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(OBJS) $(LIBS) -lpthread -lm -lrt  -lglib-2.0    -ldl
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)
+PKG_KCONFIG:=RALINK_MT7620 RALINK_MT7621 RALINK_MT7628
+#PKG_CONFIG_DEPENDS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_$c),CONFIG_$(c)))
 
 
-clean:
-	rm -rf $(OBJS) $(EXEC)
+include $(INCLUDE_DIR)/package.mk
+#include $(INCLUDE_DIR)/kernel.mk
 
-romfs:
-	$(ROMFSINST) $(EXEC) /bin/$(EXEC)
+define Package/apclient
+  SECTION:=MTK Properties
+  CATEGORY:=MTK Properties
+  TITLE:=apclient
+  SUBMENU:=Applications
+  DEPENDS:=+libpthread +librt +glib2
+endef
+define Package/apclient/description
+  An program to config Dalitek Client deamon.
+endef
+
+define Build/Prepare
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./src/* $(PKG_BUILD_DIR)/
+endef
+
+TARGET_CFLAGS += \
+	$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_$c),-DCONFIG_$(c)))
+
+define Build/Configure
+endef
+
+define Package/apclient/install
+	$(INSTALL_DIR) $(1)/bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/apclient $(1)/bin
+endef
+
+
+$(eval $(call BuildPackage,apclient))
 

@@ -101,6 +101,11 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 
 
 #define DEVICE_ID_UART                0x20   ///* 串口透传类设备 */
+#define DEVICE_ID_S10                 0xC0  
+#define DEVICE_ID_S11                 0xC1   
+#define DEVICE_ID_S12                 0xC2   
+#define DEVICE_ID_S13                 0xC3   
+
 
 #define DEVICE_ID_RELAY               0x17
 // 允许组网命令
@@ -111,6 +116,9 @@ typedef void (*ZOCRecvProcess_t)( ZOCData_t *msg );
 #define  DEVICE_TYPE_ID                (FRAME_CMD_DEV_ID + 1)
 #define PAYLOAD_START			      10
 #define SHORT_ADDR_START			  21
+
+#define UART_DEVICE_TYPE_ID_START     (PAYLOAD_START + 2)   // 串口透传类设备ID 起始位置
+#define UART_DEVICE_STATUS_FLAG       0xFD
 
 // 定义设备编码
 #define DEVICE_TYPE_DC_POWER		  0x01
@@ -198,6 +206,9 @@ void zbSocProcessRpc(void);
 
 void zbSocSendCommand(uSOC_packet_t *packet);
 void zbSocCloseNwk();
+void zbSocClearNwk();
+void zbSocDeleteDeviceformNetwork();
+void zbSocDeleteDevformNetwork(uint8_t* data);
 
 //ZLL API's
 void zbSocTouchLink(void);

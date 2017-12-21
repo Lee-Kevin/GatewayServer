@@ -10,7 +10,7 @@ extern "C"
 #include <stdint.h>
 #include <string.h>
 #include <sys/time.h>
-#include <stdbool.h>
+// #include <stdbool.h>
 #include <errno.h>
 
 
@@ -46,7 +46,7 @@ typedef struct sFrame_head sFrame_head_t;
 
 /* The Frame struct */
 struct device_write {
-    char *devId;
+    char devId[20];
     uint16_t type;
     uint32_t  value;
     void *next;
@@ -127,13 +127,16 @@ typedef struct pdu_content pdu_content_t;
 #define TYPE_DEV_WRITE                           0x0005
 /*device read*/
 #define TYPE_DEV_READ                            0x0006
+/*device read*/
+#define TYPE_DEV_DELETE                          0x0007
+
 /*APP request device information */
 #define TYPE_REQ_DEV_INFO                        0x000E
 
 /*Upload*********************************************************************/
 
 /*AP report device data to M1*//*M1 report device data to APP*/
-#define TYPE_REPORT_DATA                         0x1001
+#define TYPE_REPORT_DATA                         0x1002
 /*M1 report device information to APP*/
 #define TYPE_M1_REPORT_AP_INFO					 0x1003
 /*M1 report added AP & dev information to APP*/
@@ -161,8 +164,10 @@ typedef struct pdu_content pdu_content_t;
 #define PARAM_TYPE_POWER_STATUS 			     0x4004
 #define PARAM_TYPE_ONINE_STATUS 			     0x4014
 
+#define PARAM_TYPE_ZIGBEENET_STATUS 	         0x4013
+
 #define PARAM_TYPE_S1_PEOPLE					 0x4001
-#define PARAM_TYPE_S1_LIGHT 					 0x4015
+#define PARAM_TYPE_S1_LIGHT 					 0x4008
 #define PARAM_TYPE_S1_DEFUSING					 0x4016
 
 #define PARAM_TYPE_S2_DOORSTATUS				 0x4005
@@ -182,6 +187,15 @@ typedef struct pdu_content pdu_content_t;
 #define PARAM_TYPE_S8_CH4						 0x4019
 
 #define PARAM_TYPE_S6_KEY						 0x8010
+
+#define PARAM_TYPE_DEV_SWITCH   				 0x200D
+
+#define PARAM_TYPE_S10_MODE				    	 0x801B
+#define PARAM_TYPE_S10_SPEED					 0x801C
+
+#define PARAM_TYPE_S11_LIGHT					 0x201E
+#define PARAM_TYPE_S11_TEMP 					 0x201F
+
 
 #define PARAM_TYPE_S12_SWITCH   				 0x200D
 #define PARAM_TYPE_S12_REALY_1					 0x2023

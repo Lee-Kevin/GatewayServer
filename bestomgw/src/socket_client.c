@@ -49,7 +49,7 @@
 #define msg_memcpy(src, dst, len)	memcpy(src, dst, len)
 
 
-#define PACKET_HEAD                   0           //  定义包前面的包头是否需要
+
 
 /**************************************************************************************************
  *                                        Externals
@@ -638,7 +638,7 @@ static void *rxThreadFunc (void *ptr)
 								
 					memcpy(&(newMessage->message),
 							(uint8_t*)&(socketBuf[0][0]),
-							tmplen);
+							n);  // tmplen
 					memset(socketBuf[0], 0, sizeof(socketBuf[0]));
 					//printf("\n> I have already copy the message: %s\n",newMessage->message.pData);
 					
@@ -801,15 +801,18 @@ void socketClientSendData (msgData_t *pMsg)
 	datalen = strlen(pMsg->pData);
 	
 	#if PACKET_HEAD
-		uint8_t * data = (char *)malloc(datalen + 4);
+		uint8_t * data = (uint8_t *)malloc(datalen + 4);
+		// uint8_t data[datalen+4];
 		data[0] = 0xFE;
 		data[1] = 0xFD;
 		data[2] = datalen/256;
 		data[3] = datalen%256;
-		sprintf(&data[4],"%s",pMsg->pData);
-		// debug_printf("\n[DBG] the data is %s \n",data);
-		debug_printf("\n[DBG] the data[4] is %s \n",&data[4]);
+		memcpy(&data[4],pMsg->pData,datalen);
+		// sprintf(&data[4],"%s",pMsg->pData);
+		debug_printf("\n[DBG] the data len is %d \n",datalen);
+		// debug_printf("\n[DBG] the data[4] is %s \n",&data[4]);
 		datalen += 4;
+		
 		if(SocketErrFlag == 1) {
 			printf("\n[ERR] The sClientFd is %d",sClientFd);
 		} else {
@@ -819,7 +822,9 @@ void socketClientSendData (msgData_t *pMsg)
 				debug_printf("\n[ERR] There is something error on socket, please init the socket again\n");
 			}
 		}
+		debug_printf("\n[DBG] Before free data");
 		free(data);
+		debug_printf("\n[DBG] After free data");
 	#else 
 		if(SocketErrFlag == 1) {
 			printf("\n[ERR] The sClientFd is %d",sClientFd);
@@ -831,10 +836,6 @@ void socketClientSendData (msgData_t *pMsg)
 			}
 		}
 	#endif
-		
-	
-
-
 }
 
 	/*
@@ -857,7 +858,7 @@ void getClientLocalPort(int *port, char **macaddr) {
 	
     struct ifreq ifr;  
 
-    strcpy(ifr.ifr_name, "eth0");  
+    strcpy(ifr.ifr_name, "eth0.2");  
     ioctl(sClientFd, SIOCGIFHWADDR, &ifr);  
     int i;  
     char mac[18];  

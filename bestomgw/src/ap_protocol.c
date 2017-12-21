@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <sys/msg.h>
 #include "socket_client.h"
 #include "ap_protocol.h"
 #include <unistd.h>
@@ -22,6 +23,7 @@
 #include "database.h"
 #include <sys/ipc.h>
 #include "devicestatus.h"
+#include "msgqueue.h"
 
 #define __BIG_DEBUG__
 
@@ -49,11 +51,13 @@ char *version[]={"1.0","1.1"};
 */
 extern pthread_cond_t heartBeatCond;
 extern pthread_mutex_t heartBeatMutex;
-
+extern int DataBaseQueueIndex;
+// zbSocDeleteDeviceformNetwork(char* addr)
 
 /*
 * Local function
 */
+static uint8_t checkData(uint8_t *data, uint16_t len);
 static void Frame_packet_send (sFrame_head_t* _pFrame_Common);
 static void Frame_packet_recv (sFrame_head_t* _pFrame_Common);
 
@@ -83,15 +87,26 @@ void data_handle(char* data)
     cJSON* pduTypeJson = NULL;
     cJSON* pduDataJson = NULL;
 	
-	printf("**************************************************\n");
-	printf("> I have got the message:\n %s\n",data);
-	printf("**************************************************\n");	
+	
+//	printf("> I have got the message:\n %s\n",data);
+	
 	#if PACKET_HEAD
+		printf("**************************************************\n");
+		
+		for (int i=0;i<4;i++) {
+			printf("%02x--",data[i]);
+		}
+		// uint32_t len = strlen(&data[4]);
+		// for (int i=0; i<len; i++) {
+			// printf("%02x",data[4+i]);
+		// }
+		// printf("the Data is %s",&data[4]);
 		rootJson = cJSON_Parse(&data[4]);
 	#else 
 		rootJson = cJSON_Parse(data);
 	#endif
-    rootJson = cJSON_Parse(data);
+	debug_printf("\n[DBG] The data Recived is %s\n",(char *)cJSON_PrintUnformatted(rootJson));
+	printf("**************************************************\n");	
     if(NULL == rootJson){
 		debug_printf("[DBG] rootJson null\n");
         return;
@@ -138,7 +153,7 @@ void data_handle(char* data)
     Frame_RecData.pdutype = pduTypeJson->valueint;
 	/* pdu 装载的内容为元素“devData” 里的内容 不同于发送时装载的内容 */
 	Frame_RecData.pdu     = (char *)(cJSON_PrintUnformatted(pduDataJson));
-	
+	debug_printf("\n[DBG] Frame_RecData.pdu %s\n",(char *)(cJSON_PrintUnformatted(pduDataJson)));
 	Frame_packet_recv(&Frame_RecData);
     cJSON_Delete(rootJson);
 }
@@ -179,7 +194,7 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 		return;
     }
 	
-	printf("-----------------------------Frame_packet_recv-----------------------------\n");
+	printf("\n-----------------------------Frame_packet_recv-----------------------------\n");
 	
 	switch(_frame_head.pdutype) {
 	/* 通用回复处理 */
@@ -210,7 +225,9 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 		break;
 	/* AP 使能、失使能子设备入网 */	
 	case TYPE_DEV_NET_CONTROL:
-	
+		if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
+		} else { /* 发送回复命令失败 */
+		}
 		debug_printf("[DBG] This is TYPE_DEV_NET_CONTROL %x\n",TYPE_DEV_NET_CONTROL);
 		int result = pJsondevData -> valueint;
 		debug_printf("[DBG] The result is : %d\n",result);
@@ -222,32 +239,23 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 			zbSocCloseNwk();
 		}
 		myresult = SUCCESS;
-		if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
-		} else { /* 发送回复命令失败 */
-		}
-		
+
 		break;	
 	/* 子设备控制命令 写入*/
 	case TYPE_DEV_WRITE:
 		debug_printf("[DBG] This is TYPE_DEV_WRITE %x\n",TYPE_DEV_WRITE);
+		if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
+		} else { /* 发送回复命令失败 */
+		}
 		int number1 = cJSON_GetArraySize(pJsondevData);
 		//printf("The Array Size is %d",number1);
 		for(int i = 0; i < number1; i++){
-			
 			devWriteData_t WriteData;
-			
 			devDataJson = cJSON_GetArrayItem(pJsondevData,i);
 			devIdJson = cJSON_GetObjectItem(devDataJson, "devId");
-			
-			WriteData.devId = devIdJson->valuestring;
-			
-			//printf("WriteData.devId: %s",WriteData.devId);
-			
-			//printf("devId:%s\n",devIdJson->valuestring);
+			sprintf(WriteData.devId,"%s",devIdJson->valuestring);
 			paramJson = cJSON_GetObjectItem(devDataJson, "param");
 			int number2 = cJSON_GetArraySize(paramJson);
-			//printf(" number2:%d\n",number2);
-			// 暂时忽略调光等复杂功能
 			for(int j = 0; j < number2; j++){
 				paramDataJson = cJSON_GetArrayItem(paramJson, j);
 				typeJson = cJSON_GetObjectItem(paramDataJson, "type");
@@ -263,9 +271,64 @@ void Frame_packet_recv (sFrame_head_t* _pFrame_Common) {
 		if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
 		//	debug_printf("[DBG] The data Print is %s\n",(char *)cJSON_PrintUnformatted(pJsonRoot));
 		} else {
-			
 		}
 		break;	
+	/* 删除子设备 */
+	case TYPE_DEV_DELETE: {
+		uint8_t _prdID;
+		int msgerr;
+		debug_printf("[DBG] This is TYPE_DEV_DELETE %x\n",TYPE_DEV_DELETE);
+		if (PROTOCOL_OK == sendCommReplytoServer(&_frame_head,myresult)) {
+		} else { /* 发送回复命令失败 */
+		}
+		
+		myDataBaseMsg_t msg;
+		memset(&msg,0,sizeof(myDataBaseMsg_t));
+		msg.msgType = QUEUE_TYPE_DATABASE_SEND;
+		msg.Option_type = DATABASE_OPTION_SELECT;
+		
+		debug_printf("\n[DBG] This is TYPE_DEV_DELETE %x\n",TYPE_DEV_DELETE);
+
+		typeJson = cJSON_GetObjectItem(pJsondevData, "type");
+		if(NULL == typeJson){
+			printf("typeJson null\n");
+			return;
+		}
+		devIdJson = cJSON_GetObjectItem(pJsondevData, "id");
+		if(NULL == devIdJson){
+			printf("devIdJson null\n");
+			return;
+		}
+		sprintf(msg.devlist.devID,"%s",devIdJson->valuestring);
+		
+		debug_printf("\n[DBG] the devid is %s",devIdJson->valuestring);
+		debug_printf("\n[DBG]TYPE_DEV_DELETE Begin to send the data to DataBaseQueueIndex\n");
+		
+		msgerr = msgsnd(DataBaseQueueIndex, &msg, sizeof(myDataBaseMsg_t),0);
+		debug_printf("\n[DBG] The TYPE_DEV_DELETE msg err is %d\n",msgerr);
+		if ( -1 ==  msgerr) {
+			debug_printf("\n[ERR]Can't send the msg \n");
+			return;
+		} else {
+			memset(&msg,0,sizeof(myDataBaseMsg_t));
+			msgerr = msgrcv(DataBaseQueueIndex, &msg, sizeof(myDataBaseMsg_t), QUEUE_TYPE_DATABASE_GETINFO, MSG_NOERROR);
+			if(msgerr >= sizeof(myDataBaseMsg_t)) {
+				debug_printf("\n[DBG] I got the msg prd id  %s",msg.devlist.prdID);
+				debug_printf("\n[DBG] I got the msg short addr %s",msg.devlist.shortAddr);
+				sscanf(msg.devlist.prdID,"%02x",&_prdID);
+			}
+		}
+		if(_prdID != 0) {
+			debug_printf("\n[DBG] The prdID is 0x%02x.\n",_prdID);
+			zbSocDeleteDevformNetwork(msg.devlist.shortAddr);
+			// zbSocDeleteDeviceformNetwork(msg.devlist.shortAddr);
+		} else {
+			debug_printf("\n[ERR] Can't delete the device can't find the addr.\n");
+		}
+		
+		
+	}
+	break;
 	default:
 		break;
 	}
@@ -738,34 +801,120 @@ int sendDevinfotoServer(char *mac, int port, pdu_content_t *devicepdu) {
 void DataWritetoDev(devWriteData_t *data_towrite) {
 	devWriteData_t DatatoWrite = *data_towrite;
 	uSOC_packet_t ZocCmd_packet;
+	int err;
 	uint8_t devID;
 	uint32_t value = DatatoWrite.value;
-	sDevlist_info_t mydevinfo;
+	// sDevlist_info_t mydevinfo;
 	/* 在此获得短地址及设备类型ID */
 	
-	// sscanf(DatatoWrite.devId,"%02x",&devID);  // 设备ID
+	myDataBaseMsg_t msg;
+	memset(&msg,0,sizeof(myDataBaseMsg_t));
 	
-	GetDevInfofromDatabase(DatatoWrite.devId,&mydevinfo);  // 用设备的唯一ID去获得 产品ID及短地址
-	
-	sscanf(mydevinfo.prdID,"%02x",&devID);
-	
-	ZocCmd_packet.frame.DeviceID    = devID;
+	msg.msgType = QUEUE_TYPE_DATABASE_SEND;
+	msg.Option_type = DATABASE_OPTION_SELECT;
+	sprintf(msg.devlist.devID,"%s",DatatoWrite.devId);
+	debug_printf("\n[DBG]DataWritetoDev Begin to send the data to DataBaseQueueIndex");
+	if ( -1 == (msgsnd(DataBaseQueueIndex, &msg, sizeof(myDataBaseMsg_t), 0)) ) {
+		debug_printf("\n[ERR]Can't send the msg \n");
+	} else {
+		memset(&msg,0,sizeof(myDataBaseMsg_t));
+		
+		err = msgrcv(DataBaseQueueIndex, &msg, sizeof(myDataBaseMsg_t), QUEUE_TYPE_DATABASE_GETINFO, MSG_NOERROR);
+		
+		if(-1 == err) {
+			debug_printf("\n[ERR] DataWritetoDev msgrcv Something Err");
+			return;
+		} else {  // get the message
+			debug_printf("\n[DBG] I got the msg short addr %s",msg.devlist.shortAddr);
+			sscanf(msg.devlist.prdID,"%02x",&devID);
+		}
+	}
 	ZocCmd_packet.frame.DeviceType  = 0x01;
 	memset(ZocCmd_packet.frame.payload,0,sizeof(ZocCmd_packet.frame.payload));
 	
 	switch(devID) {
-		case DEVICE_ID_RELAY: {  // S12 设备
-			static uint8_t payload;
-			ZocCmd_packet.frame.payload_len = 0x03;
+		
+		case DEVICE_ID_S10: {  // S11 设备
+			// static uint8_t payload;
+			uint8_t s10_temp_value;
+			ZocCmd_packet.frame.DeviceID    = 0x20;
+			ZocCmd_packet.frame.payload_len = 0x07;
+			
+			ZocCmd_packet.frame.payload[1] = 0x07;
+			ZocCmd_packet.frame.payload[2] = 0xC0;
+			ZocCmd_packet.frame.payload[3] = 0x00;
+			
 			switch (DatatoWrite.type) {
-				case PARAM_TYPE_S12_SWITCH:  value?(payload=0x00):(payload=0xFF);    break;
-				case PARAM_TYPE_S12_REALY_1: value?(payload&=~0x01):(payload|=0x01); break;
-				case PARAM_TYPE_S12_REALY_2: value?(payload&=~0x02):(payload|=0x02); break;
-				case PARAM_TYPE_S12_REALY_3: value?(payload&=~0x04):(payload|=0x04); break;
-				case PARAM_TYPE_S12_REALY_4: value?(payload&=~0x08):(payload|=0x08); break;			
+				case PARAM_TYPE_DEV_SWITCH: 
+					ZocCmd_packet.frame.payload[0] = 0xBE; 
+					value ? (s10_temp_value=0xFF) : (s10_temp_value=0x00);
+					ZocCmd_packet.frame.payload[4] = s10_temp_value;
+					break;
+				case PARAM_TYPE_S10_MODE:  
+					ZocCmd_packet.frame.payload[0] = 0xC0; 
+					ZocCmd_packet.frame.payload[4] = value+1;
+					break;
+				case PARAM_TYPE_S10_SPEED:   
+					ZocCmd_packet.frame.payload[0] = 0xC2;
+					ZocCmd_packet.frame.payload[4] = (value+1)*3;
+					break;
 				default: break;
 			}
-			ZocCmd_packet.frame.payload[0] = payload;
+			ZocCmd_packet.frame.payload[5] = 0x01;
+			ZocCmd_packet.frame.payload[6] = checkData(ZocCmd_packet.frame.payload,ZocCmd_packet.frame.payload_len);
+		}
+		break;
+		
+		case DEVICE_ID_S11: {  // S11 设备
+			// static uint8_t payload;
+			uint8_t s11_temp_value;
+			ZocCmd_packet.frame.DeviceID    = 0x20;
+			ZocCmd_packet.frame.payload_len = 0x07;
+			
+			ZocCmd_packet.frame.payload[1] = 0x07;
+			ZocCmd_packet.frame.payload[2] = 0xC1;
+			ZocCmd_packet.frame.payload[3] = 0x00;
+			
+			switch (DatatoWrite.type) {
+				case PARAM_TYPE_DEV_SWITCH: 
+					ZocCmd_packet.frame.payload[0] = 0xC3; 
+					value ? (s11_temp_value=0xFF) : (s11_temp_value=0x00);
+					ZocCmd_packet.frame.payload[4] = s11_temp_value;
+					break;
+				case PARAM_TYPE_S11_LIGHT:  
+					ZocCmd_packet.frame.payload[0] = 0xC4; 
+					ZocCmd_packet.frame.payload[4] = value*254/100;
+					break;
+				case PARAM_TYPE_S11_TEMP:   
+					ZocCmd_packet.frame.payload[0] = 0xC5;
+					ZocCmd_packet.frame.payload[4] = value*255/100;
+					break;
+				default: break;
+			}
+			ZocCmd_packet.frame.payload[5] = 0x01;
+			ZocCmd_packet.frame.payload[6] = checkData(ZocCmd_packet.frame.payload,ZocCmd_packet.frame.payload_len);
+		}
+		break;
+		case DEVICE_ID_S12: {  // S12 设备
+			// static uint8_t payload;
+			ZocCmd_packet.frame.DeviceID    = 0x20;
+			ZocCmd_packet.frame.payload_len = 0x08;
+			ZocCmd_packet.frame.payload[0] = 0xC6;
+			ZocCmd_packet.frame.payload[1] = 0x08;
+			ZocCmd_packet.frame.payload[2] = 0xC2;
+			ZocCmd_packet.frame.payload[3] = 0x00;
+
+			switch (DatatoWrite.type) {
+				case PARAM_TYPE_S12_SWITCH:  ZocCmd_packet.frame.payload[4] = 0xFF; break;
+				case PARAM_TYPE_S12_REALY_1: ZocCmd_packet.frame.payload[4] = 0x01; break;
+				case PARAM_TYPE_S12_REALY_2: ZocCmd_packet.frame.payload[4] = 0x02; break;
+				case PARAM_TYPE_S12_REALY_3: ZocCmd_packet.frame.payload[4] = 0x03; break;
+				case PARAM_TYPE_S12_REALY_4: ZocCmd_packet.frame.payload[4] = 0x04; break;		
+				default: break;
+			}
+			ZocCmd_packet.frame.payload[5] = value;
+			ZocCmd_packet.frame.payload[6] = 0x01;
+			ZocCmd_packet.frame.payload[7] = checkData(ZocCmd_packet.frame.payload,ZocCmd_packet.frame.payload_len);
 		}
 		break;
 		case DEVICE_ID_S6: {  // 红外学习
@@ -788,9 +937,10 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 			
 		} 
 		break;
-		case DEVICE_ID_UART: {
+		case DEVICE_ID_RELAY: {  // S12 设备
 			static uint8_t payload;
 			ZocCmd_packet.frame.payload_len = 0x03;
+			ZocCmd_packet.frame.DeviceID    = devID;
 			switch (DatatoWrite.type) {
 				case PARAM_TYPE_S12_SWITCH:  value?(payload=0x00):(payload=0xFF);    break;
 				case PARAM_TYPE_S12_REALY_1: value?(payload&=~0x01):(payload|=0x01); break;
@@ -801,10 +951,8 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 			}
 			ZocCmd_packet.frame.payload[0] = payload;
 		}
-		break;
 		
-		default: printf("\n[ERR] There is something wrong with DevID"); break;
-		
+		default: printf("\n[ERR] There is something wrong with DevID"); return; break;
 	}
 
 	
@@ -812,13 +960,31 @@ void DataWritetoDev(devWriteData_t *data_towrite) {
 	memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
 	
 	for (uint8_t i=0; i<2; i++) {
-		sscanf(mydevinfo.shortAddr+2*i,"%02x",ZocCmd_packet.frame.shortAddr+i);
+		sscanf(msg.devlist.shortAddr+2*i,"%02x",ZocCmd_packet.frame.shortAddr+i);
 	}	
 	//memset(ZocCmd_packet.frame.longAddr,0,sizeof(ZocCmd_packet.frame.longAddr));
 	zbSocSendCommand(&ZocCmd_packet);
-	usleep(200000);
+	usleep(180000);
 	printf("\n[DBG] End of sleep\n");
-	
+}
+
+/*********************************************************************
+ * @fn     checkData
+ *
+ * @brief  校验数据
+ *
+ * @param
+ *
+ * @return
+ */
+
+uint8_t checkData(uint8_t *data, uint16_t len) {
+	uint16_t sum = 0;
+	for (uint16_t i=0; i<len-1; i++) {
+		sum += data[i];
+	}
+	printf("[DBG] The checkdata should be is %2x \n", sum&0xFF);
+	return sum&0xFF;
 }
 
 
@@ -864,25 +1030,9 @@ void Frame_packet_send (sFrame_head_t* _pFrame_Common) {
     if (NULL == APSendMsgtoServer) {
 		debug_printf("[ERR] Please init the APSendMsgtoServer func \n");
 	} else {
-		#if 0
-		uint16_t len = strlen((char *)cJSON_PrintUnformatted(pJsonRoot));
-		uint8_t * data = (char *)malloc(len + 4);
-		data[0] = 0xFE;
-		data[1] = 0xFD;
-		data[2] = len/256;
-		data[3] = len%256;
-		debug_printf("\n[DBG] the len is %x \n",len);
-		// sprintf(&data[0],"%02x%02x%02x%02x",0xFE,0xFD,len/256,len%256);
-		sprintf(&data[4],"%s",(char *)cJSON_PrintUnformatted(pJsonRoot));
-		debug_printf("\n[DBG] the data is %d \n",data);
-		debug_printf("\n[DBG] the data[4] is %s \n",&data[4]);
-		APSendMsgtoServer(data);
-		free(data);
-		#else 
 		APSendMsgtoServer((char *)cJSON_PrintUnformatted(pJsonRoot));	
-		#endif
-		
-		
 		debug_printf("[DBG] SEND packet to server successfully \n");
 	}
+	cJSON_Delete(pJsonRoot);
+	
 }

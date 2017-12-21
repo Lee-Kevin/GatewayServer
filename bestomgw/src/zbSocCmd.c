@@ -463,7 +463,14 @@ static void *ZOCrxThreadFunc (void *ptr) {
 					if(tail >= dlen) { 
 						// printf("\n[DBG], the data len is %d\n",dlen);
 						if( checkRead(data, dlen) ) {
-							debug_printf("[DBG] Pass the checkRead \n");
+							debug_printf("\n [DBG]*ZOCrxThreadFunc Pass the checkRead \n");
+							debug_printf("\n -------------------------------------\n");
+							debug_printf("\n [DBG] The data is \n");
+							for (int j=0; j<data[2]; j++) {
+								debug_printf("%02x ",data[j]);
+							}
+							debug_printf("\n ------------------------------------ \n");
+							
 							ZOClinkedMsg_t *newMessage = (ZOClinkedMsg_t *) malloc(sizeof(ZOClinkedMsg_t));
 							if(newMessage == NULL) {
 								done = 1;
@@ -708,6 +715,86 @@ void zbSocCloseNwk() {
 	memset(openNetWork.frame.longAddr,0,sizeof(openNetWork.frame.longAddr));
 	zbSocSendCommand(&openNetWork);
 }
+
+/*********************************************************************
+ * @fn      zbSocCloseNwk
+ *
+ * @brief   Send the open network command to a ZLL device.
+ *
+ * @param   none
+ *
+ * @return  none
+ */
+void zbSocClearNwk() {
+	uSOC_packet_t openNetWork;
+	
+	openNetWork.frame.payload_len = 0x01;
+	openNetWork.frame.DeviceID    = 0xFC;
+	openNetWork.frame.DeviceType  = ~0xFC;
+	memset(openNetWork.frame.payload,0,sizeof(openNetWork.frame.payload));
+	openNetWork.frame.payload[0] = 0xFF;
+	memset(openNetWork.frame.shortAddr,0,sizeof(openNetWork.frame.shortAddr));
+	memset(openNetWork.frame.longAddr,0,sizeof(openNetWork.frame.longAddr));
+	zbSocSendCommand(&openNetWork);
+}
+
+/*********************************************************************
+ * @fn      zbSocDeleteDeviceformNetwork
+ *
+ * @brief   把指定节点从网络中删除
+ *
+ * @param   none
+ *
+ * @return  none
+ */
+
+void zbSocDeleteDevformNetwork(uint8_t* data) {
+	uSOC_packet_t openNetWork;
+	
+	openNetWork.frame.payload_len = 0x00;
+	openNetWork.frame.DeviceID    = 0xFB;
+	openNetWork.frame.DeviceType  = ~0xFB;
+	memset(openNetWork.frame.payload,0,sizeof(openNetWork.frame.payload));
+	memset(openNetWork.frame.shortAddr,0,sizeof(openNetWork.frame.shortAddr));
+	for (uint8_t i=0; i<2; i++) {
+		sscanf(data+2*i,"%02x",openNetWork.frame.shortAddr+i);
+	}
+	// openNetWork.frame.shortAddr[0] = 0xbb;
+	// openNetWork.frame.shortAddr[1] = 0x91;
+	
+	// sscanf(addr,"%02x%02x",openNetWork.frame.shortAddr);
+	memset(openNetWork.frame.longAddr,0,sizeof(openNetWork.frame.longAddr));
+	zbSocSendCommand(&openNetWork);
+}
+
+
+
+/*********************************************************************
+ * @fn      zbSocDeleteDeviceformNetwork
+ *
+ * @brief   把指定节点从网络中删除
+ *
+ * @param   none
+ *
+ * @return  none
+ */
+
+void zbSocDeleteDeviceformNetwork() {
+	uSOC_packet_t openNetWork;
+	
+	openNetWork.frame.payload_len = 0x00;
+	openNetWork.frame.DeviceID    = 0xFB;
+	openNetWork.frame.DeviceType  = ~0xFB;
+	memset(openNetWork.frame.payload,0,sizeof(openNetWork.frame.payload));
+	memset(openNetWork.frame.shortAddr,0,sizeof(openNetWork.frame.shortAddr));
+	openNetWork.frame.shortAddr[0] = 0xbb;
+	openNetWork.frame.shortAddr[1] = 0x91;
+	
+	// sscanf(addr,"%02x%02x",openNetWork.frame.shortAddr);
+	memset(openNetWork.frame.longAddr,0,sizeof(openNetWork.frame.longAddr));
+	zbSocSendCommand(&openNetWork);
+}
+
 
 
 
